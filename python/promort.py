@@ -46,8 +46,9 @@ def main(args):
         #eddl.sgd(0.0001, 0.9),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
-        eddl.CS_GPU([1]) if args.gpu else eddl.CS_CPU()
-    )
+        eddl.CS_GPU([1], mem="low_mem") if args.gpu else eddl.CS_CPU()
+    
+        )
     eddl.summary(net)
     eddl.setlogfile(net, "promort_VGG16_classification")
     
@@ -135,7 +136,7 @@ def main(args):
             output = eddl.getTensor(out)
             sum_ = 0.0
             for k in range(args.batch_size):
-                result = output.select([str(k)]))
+                result = output.select([str(k)])
                 target = y.select([str(k)])
                 ca = metric.value(target, result)
                 total_metric.append(ca)
