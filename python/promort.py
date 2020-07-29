@@ -42,7 +42,7 @@ def main(args):
     net = eddl.Model([in_], [out])
     eddl.build(
         net,
-        eddl.rmsprop(1e-5),
+        eddl.rmsprop(1e-6),
         #eddl.sgd(0.0001, 0.9),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
