@@ -27,7 +27,7 @@ import sys
 import numpy as np
 
 import pyeddl.eddl as eddl
-from pyeddl._core import Tensor
+from pyeddl.tensor import Tensor
 
 def read_input(filename, split_ratio=0.7):
     data = np.load(filename)['d']
@@ -50,10 +50,10 @@ def read_input(filename, split_ratio=0.7):
     y_test = test[:,3:]
     
     # Tensor creation
-    x_train_t = Tensor(x_trn)
-    y_train_t = Tensor(y_trn)
-    x_test_t = Tensor(x_test)
-    y_test_t = Tensor(y_test)
+    x_train_t = Tensor.fromarray(x_trn.astype(np.float32))
+    y_train_t = Tensor.fromarray(y_trn.astype(np.float32))
+    x_test_t = Tensor.fromarray(x_test.astype(np.float32))
+    y_test_t = Tensor.fromarray(y_test.astype(np.float32))
 
     return x_train_t, y_train_t, x_test_t, y_test_t
 
