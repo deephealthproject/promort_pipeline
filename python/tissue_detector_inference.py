@@ -43,10 +43,17 @@ def main(args):
 
     ## Load model
     net = models.tissue_detector_DNN()
-    eddl.load(net, fname=args.weights_fn)
-    print ("Net description:")
-    eddl.summary(net)
+    eddl.build(
+        net,
+        eddl.rmsprop(0.00001),
+        ["soft_cross_entropy"],
+        ["categorical_accuracy"],
+        eddl.CS_GPU() if args.gpu else eddl.CS_CPU()
+    )
 
+    eddl.load(net, args.weights_fn, "bin")
+    eddl.summary(net)
+    
     ## Load Slide
     slideT = read_slide(slide_fn, level)
 
