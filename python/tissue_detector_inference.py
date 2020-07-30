@@ -32,10 +32,33 @@ from pyeddl.tensor import Tensor
 
 import models
 
-def read_slide(slide_fn, level):
-    levels = ecvl.OpenSlideGetLevels(slide_fn)  
-    print (levels)
-    return None
+def read_slide(slide_fn, level=4):
+    levels = ecvl.OpenSlideGetLevels(slide_fn)
+    dims = [0, 0] + levels[level]
+    img = ecvl.OpenSlideRead(slide_fn, level, dims)
+    t = ecvl.ImageToTensor(img)
+    t_np = t.getdata()
+    s = t_np.shape
+    t_np = t_np.transpose((1,2,0)).reshape((s[1]*s[2], 3)) # Channel last and reshape
+    t_eval = Tensor.fromarray(t_np) 
+    print (t_eval.getShape())
+    return t_eval, s
+
+
+def get_mask(prob_T_l, s, th):
+    mask_np_l = []
+    for prob_T in prob_T_l:
+        output_np = prob_T.getdata()
+        pred_np = np.zeros(output_np.shape[0])
+        pred_np[output_np[:, 1]>th] = 1
+        mask_values = pred_np
+        mask_np_l.append(mask_values)
+
+    mask_values = np.vstack(mask_np_l)
+    mask = mask_values.reshape((s[1], s[2]))
+
+    return mask
+
 
 def main(args):
     slide_fn = args.slide_fn
@@ -55,16 +78,32 @@ def main(args):
     eddl.summary(net)
     
     ## Load Slide
-    slideT = read_slide(slide_fn, level)
+    slide_T, s = read_slide(slide_fn, level)
 
     ## Compute tissue mask
-        
+    #len_T = slide_T.getShape()[0]
+    #bs = args.batch_size
+    #nb = int(np.ceil((len_T / bs)))
+    #print ("n. batches: %d" % nb)
+    #output_l = []
+    #for b in range(nb):
+    #    start = bs*b
+    #    stop = bs*(b+1) if bs*(b+1) < len_T else len_T
+    #    b_T = slide_T.select(["%d:%d" % (start, stop)])
+    
+    output_l = eddl.predict(net, [slide_T])
+    
+    print (output_l)
+    ## Binarize the output
+    mask = get_mask(output_l, s, args.threshold)
+    np.save("mask", mask)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("slide_fn", metavar="INPUT_DATASET")
     parser.add_argument("--weights_fn", type=str, metavar="MODEL FILENAME", default=30)
     parser.add_argument("--level", type=int, metavar="INT", default=4)
-    parser.add_argument("--batch-size", type=int, metavar="INT", default=8192)
+    parser.add_argument("--batch-size", type=int, metavar="INT", default=2**24)
+    parser.add_argument("--threshold", type=float, metavar="THRESHOLD TO CONVERT PROB TO PREDICTIONS", default=0.5)
     parser.add_argument("--gpu", action="store_true")
     main(parser.parse_args(sys.argv[1:]))
