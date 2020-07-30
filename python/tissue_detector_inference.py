@@ -27,66 +27,37 @@ import sys
 import numpy as np
 
 import pyeddl.eddl as eddl
+import pyecvl.ecvl as ecvl
 from pyeddl.tensor import Tensor
 
 import models
 
-def read_input(filename, split_ratio=0.7):
-    data = np.load(filename)['d']
-    # shuffle data
-    sel_index = np.arange(data.shape[0])
-    np.random.shuffle(sel_index)
-    
-    shuffled_data = data[sel_index]
-    shuffled_data = np.c_[shuffled_data, np.zeros(shuffled_data.shape[0])] # Add column for two class labels
-    shuffled_data[:,4][shuffled_data[:,3] == 0] = 1.
-
-    # Split train test
-    n_train = int (shuffled_data.shape[0] * split_ratio )
-    
-    train = shuffled_data[0:n_train]
-    test = shuffled_data[n_train:]
-    x_trn = train[:,:3]
-    y_trn = train[:,3:]
-    x_test = test[:,:3]
-    y_test = test[:,3:]
-    
-    # Tensor creation
-    x_train_t = Tensor.fromarray(x_trn.astype(np.float32))
-    y_train_t = Tensor.fromarray(y_trn.astype(np.float32))
-    x_test_t = Tensor.fromarray(x_test.astype(np.float32))
-    y_test_t = Tensor.fromarray(y_test.astype(np.float32))
-
-    return x_train_t, y_train_t, x_test_t, y_test_t
-
+def read_slide(slide_fn, level):
+    levels = ecvl.OpenSlideGetLevels(slide_fn)  
+    print (levels)
+    return None
 
 def main(args):
-    ## Read input dataset
-    x_train, y_train, x_test, y_test = read_input(args.in_ds)
+    slide_fn = args.slide_fn
+    level = args.level
 
-    ## Net architecture
+    ## Load model
     net = models.tissue_detector_DNN()
-
-    ## Net compilation
-    eddl.build(
-        net,
-        eddl.rmsprop(0.00001),
-        ["soft_cross_entropy"],
-        ["categorical_accuracy"],
-        eddl.CS_GPU() if args.gpu else eddl.CS_CPU()
-    )
-
+    eddl.load(net, fname=args.weights_fn)
+    print ("Net description:")
     eddl.summary(net)
 
-    ## Fit and evaluation
-    eddl.fit(net, [x_train], [y_train], args.batch_size, args.epochs)
-    eddl.evaluate(net, [x_test], [y_test])
-    eddl.save(net, "tissue_detector_model.bin")
+    ## Load Slide
+    slideT = read_slide(slide_fn, level)
+
+    ## Compute tissue mask
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("in_ds", metavar="INPUT_DATASET")
-    parser.add_argument("--epochs", type=int, metavar="INT", default=30)
+    parser.add_argument("slide_fn", metavar="INPUT_DATASET")
+    parser.add_argument("--weights_fn", type=str, metavar="MODEL FILENAME", default=30)
+    parser.add_argument("--level", type=int, metavar="INT", default=4)
     parser.add_argument("--batch-size", type=int, metavar="INT", default=8192)
     parser.add_argument("--gpu", action="store_true")
     main(parser.parse_args(sys.argv[1:]))

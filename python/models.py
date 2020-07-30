@@ -159,3 +159,16 @@ def SegNetBN(x, num_classes):
     x = eddl.Conv(x, num_classes, [3, 3], [1, 1], "same")
 
     return x
+
+
+def tissue_detector_DNN():
+    in_ = eddl.Input([3])
+
+    layer = in_
+    layer = eddl.ReLu(eddl.Dense(layer, 50))
+    layer = eddl.ReLu(eddl.Dense(layer, 50))
+    layer = eddl.ReLu(eddl.Dense(layer, 50))
+    out = eddl.Softmax(eddl.Dense(layer, 2))
+    net = eddl.Model([in_], [out])
+
+    return net
