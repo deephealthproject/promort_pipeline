@@ -39,7 +39,8 @@ def read_input(filename, split_ratio=0.7):
     
     shuffled_data = data[sel_index]
     shuffled_data = np.c_[shuffled_data, np.zeros(shuffled_data.shape[0])] # Add column for two class labels
-    shuffled_data[:,4][shuffled_data[:,3] == 0] = 1.
+    shuffled_data[:,4][shuffled_data[:,3] == 0] = 1.  ## [1] -> [1 0], [0]-->[0 1]
+    shuffled_data[:,[3,4]] = shuffled_data[:,[4,3]]   ## Swap last two columns [1] --> [0 1], [0] --> [1 0]
 
     # Split train test
     n_train = int (shuffled_data.shape[0] * split_ratio )
