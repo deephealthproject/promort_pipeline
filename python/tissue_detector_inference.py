@@ -96,7 +96,8 @@ def main(args):
     print (output_l)
     ## Binarize the output
     mask = get_mask(output_l, s, args.threshold)
-    np.save("mask", mask)
+    np.save(args.output, mask)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
@@ -106,4 +107,8 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, metavar="INT", default=2**24)
     parser.add_argument("--threshold", type=float, metavar="THRESHOLD TO CONVERT PROB TO PREDICTIONS", default=0.5)
     parser.add_argument("--gpu", action="store_true")
+    parser.add_argument("-o",
+                        help="output path",
+                        dest="output",
+                        default="mask")
     main(parser.parse_args(sys.argv[1:]))
