@@ -18,10 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""
-Fully connected network for tissue detection in histopathology images
-"""
-
 import argparse
 import sys
 import numpy as np
