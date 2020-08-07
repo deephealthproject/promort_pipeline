@@ -38,22 +38,10 @@ def main(args):
     level = args.level
 
     t_dec = td.tissue_detector(model_fn=args.weights_fn, th=args.threshold)
-
-    dimensions = ecvl.OpenSlideGetLevels(slide_fn)[0]
-    ## Compute tissue mask
-    #len_T = slide_T.getShape()[0]
-    #bs = args.batch_size
-    #nb = int(np.ceil((len_T / bs)))
-    #print ("n. batches: %d" % nb)
-    #output_l = []
-    #for b in range(nb):
-    #    start = bs*b
-    #    stop = bs*(b+1) if bs*(b+1) < len_T else len_T
-    #    b_T = slide_T.select(["%d:%d" % (start, stop)])
-
     mask = t_dec.get_mask_tissue_from_slide(slide_fn,
                                             level=level,
                                             use_openslide=args.use_openslide)
+    dimensions = ecvl.OpenSlideGetLevels(slide_fn)[0]
     if args.more_info_output:
         with open(args.output, 'wb') as f:
             pickle.dump(
