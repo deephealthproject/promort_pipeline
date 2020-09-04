@@ -43,7 +43,7 @@ def main(args):
     eddl.build(
         net,
         eddl.rmsprop(1e-6),
-        #eddl.sgd(0.0001, 0.9),
+        #eddl.sgd(0.001, 0.9),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
         eddl.CS_GPU([1], mem="low_mem") if args.gpu else eddl.CS_CPU()
@@ -53,14 +53,14 @@ def main(args):
     eddl.setlogfile(net, "promort_VGG16_classification")
     
     training_augs = ecvl.SequentialAugmentationContainer([
-        ecvl.AugResizeDim(size),
-        ecvl.AugMirror(.5),
-        ecvl.AugFlip(.5),
-        ecvl.AugRotate([-180, 180]),
-        ecvl.AugAdditivePoissonNoise([0, 10]),
-        ecvl.AugGammaContrast([0.5, 1.5]),
-        ecvl.AugGaussianBlur([0, 0.8]),
-        ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5)
+        ecvl.AugResizeDim(size)
+        #ecvl.AugMirror(.5),
+        #ecvl.AugFlip(.5),
+        #ecvl.AugRotate([-180, 180]),
+        #ecvl.AugAdditivePoissonNoise([0, 10]),
+        #ecvl.AugGammaContrast([0.5, 1.5]),
+        #ecvl.AugGaussianBlur([0, 0.8]),
+        #ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5)
     ])
     
     validation_augs = ecvl.SequentialAugmentationContainer([
@@ -72,8 +72,8 @@ def main(args):
     )
 
     print("Reading dataset")
-    d = ecvl.DLDataset(args.in_ds, args.batch_size)
-    #d = ecvl.DLDataset(args.in_ds, args.batch_size, dataset_augs)
+    #d = ecvl.DLDataset(args.in_ds, args.batch_size)
+    d = ecvl.DLDataset(args.in_ds, args.batch_size, dataset_augs)
     x = Tensor([args.batch_size, d.n_channels_, size[0], size[1]])
     y = Tensor([args.batch_size, len(d.classes_)])
     num_samples_train = len(d.GetSplit())
@@ -133,7 +133,7 @@ def main(args):
             d.LoadBatch(x, y)
             x.div_(255.0)
             eddl.forward(net, [x])
-            output = eddl.getTensor(out)
+            output = eddl.getOutput(out)
             sum_ = 0.0
             for k in range(args.batch_size):
                 result = output.select([str(k)])
