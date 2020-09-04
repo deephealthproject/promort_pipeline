@@ -54,9 +54,9 @@ def read_input(filename, split_ratio=0.7):
     
     # Tensor creation
     x_train_t = Tensor.fromarray(x_trn.astype(np.float32))
-    y_train_t = Tensor.fromarray(y_trn.astype(np.float32))
+    y_train_t = Tensor.fromarray(y_trn.astype(np.int32))
     x_test_t = Tensor.fromarray(x_test.astype(np.float32))
-    y_test_t = Tensor.fromarray(y_test.astype(np.float32))
+    y_test_t = Tensor.fromarray(y_test.astype(np.int32))
 
     return x_train_t, y_train_t, x_test_t, y_test_t
 
