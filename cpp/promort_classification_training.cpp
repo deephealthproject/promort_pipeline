@@ -15,7 +15,7 @@ using namespace std::filesystem;
 int main(int argc, char* argv[])
 {
     // Settings
-    int epochs = 50;
+    int epochs = 300;
     int batch_size = 32;
     int num_classes = 2;
     std::vector<int> size{ 256,256 }; // Size of images
@@ -61,29 +61,29 @@ int main(int argc, char* argv[])
 
     // Build model
     build(net,
-	rmsprop(0.000001f),
-        //sgd(0.001f, 0.9f), // Optimizer
+	rmsprop(0.0001f),
+	//sgd(0.001f, 0.9f), // Optimizer
         { "soft_cross_entropy" }, // Losses
         { "categorical_accuracy" }, // Metrics
         CS_GPU(gpus, lsb, mem) // Computing Service
     );
 
-    if (!checkpoint.empty()) {
+     if (!checkpoint.empty()) {
         load(net, checkpoint, "bin");
     }
 
     // View model
     summary(net);
     plot(net, "model.pdf");
-    setlogfile(net, "skin_lesion_classification");
+    setlogfile(net, "promort_training");
 
     auto training_augs = make_unique<SequentialAugmentationContainer>(
         AugResizeDim(size),
         AugMirror(.5),
         AugFlip(.5),
-        AugRotate({ -180, 180 }),
+        AugRotate({ -45, 45 })
         //AugAdditivePoissonNoise({ 0, 10 }),
-        AugGammaContrast({ .5,1.5 })
+        //AugGammaContrast({ .5,1.5 })
         //AugGaussianBlur({ .0,.8 }),
         //AugCoarseDropout({ 0, 0.3 }, { 0.02, 0.05 }, 0.5));
 	);
@@ -94,6 +94,8 @@ int main(int argc, char* argv[])
 
     // Read the dataset
     cout << "Reading dataset" << endl;
+    //DLDataset d("/DeepHealth/git/promort_pipeline/python/set0_supersmall.yaml", batch_size, move(dataset_augmentations));
+    //DLDataset d("/DeepHealth/git/promort_pipeline/python/rnd_set_supersmall_yaml", batch_size, move(dataset_augmentations));
     DLDataset d("/DeepHealth/git/promort_pipeline/python/set0_small.yaml", batch_size, move(dataset_augmentations));
     // Create producer thread with 'DLDataset d' and 'std::queue q'
     int num_samples = vsize(d.GetSplit());
@@ -184,7 +186,7 @@ int main(int argc, char* argv[])
         cout << "Epoch elapsed time: " << tm_epoch.getTimeSec() << endl;
 
         cout << "Saving weights..." << endl;
-        save(net, "isic_classification_checkpoint_epoch_" + to_string(i) + ".bin", "bin");
+        save(net, "promort_checkpoint_epoch_" + to_string(i) + ".bin", "bin");
 
         // Evaluation
         d.SetSplit(SplitType::validation);

@@ -2,6 +2,7 @@
 #define MODELS_H_
 
 #include "ecvl/support_eddl.h"
+#include "../initializers/he_init.h" 
 
 // Model LeNet (same as https://github.com/pytorch/examples/blob/master/mnist/main.py)
 eddl::layer LeNet(eddl::layer x, const int& num_classes);
@@ -9,6 +10,7 @@ eddl::layer LeNet(eddl::layer x, const int& num_classes);
 // Model VGG16
 eddl::layer VGG16(eddl::layer x, const int& num_classes);
 eddl::layer VGG16_promort(eddl::layer x, const int& num_classes);
+eddl::layer VGG16_promort_he(eddl::layer x, const int& num_classes);
 eddl::layer VGG16_inception_1(eddl::layer x, const int& num_classes);
 eddl::layer VGG16_inception_2(eddl::layer x, const int& num_classes);
 

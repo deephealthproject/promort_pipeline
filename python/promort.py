@@ -12,6 +12,7 @@ from pyeddl.tensor import Tensor
 
 import models 
 
+
 def VGG16(in_layer, num_classes):
     x = in_layer
     x = eddl.ReLu(eddl.Conv(x, 64, [3, 3]))

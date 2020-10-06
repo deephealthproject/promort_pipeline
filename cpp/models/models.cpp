@@ -60,6 +60,29 @@ layer VGG16_promort(layer x, const int& num_classes)
     return x;
 }
 
+layer VGG16_promort_he(layer x, const int& num_classes)
+{
+    x = ReLu(he_normal(Conv(x, 64, { 3,3 })));
+    x = MaxPool(ReLu(he_normal(Conv(x, 64, { 3,3 }))), { 2,2 }, { 2,2 });
+    x = ReLu(he_normal(Conv(x, 128, { 3,3 })));
+    x = MaxPool(ReLu(he_normal(Conv(x, 128, { 3,3 }))), { 2,2 }, { 2,2 });
+    x = ReLu(he_normal(Conv(x, 256, { 3,3 })));
+    x = ReLu(he_normal(Conv(x, 256, { 3,3 })));
+    x = MaxPool(ReLu(he_normal(Conv(x, 256, { 3,3 }))), { 2,2 }, { 2,2 });
+    x = ReLu(he_normal(Conv(x, 512, { 3,3 })));
+    x = ReLu(he_normal(Conv(x, 512, { 3,3 })));
+    x = MaxPool(ReLu(he_normal(Conv(x, 512, { 3,3 }))), { 2,2 }, { 2,2 });
+    x = ReLu(he_normal(Conv(x, 512, { 3,3 })));
+    x = ReLu(he_normal(Conv(x, 512, { 3,3 })));
+    x = MaxPool(ReLu(he_normal(Conv(x, 512, { 3,3 }))), { 2,2 }, { 2,2 });
+
+    x = Reshape(x, { -1 });
+    x = ReLu(he_normal(Dense(x, 256)));
+    x = Softmax(Dense(x, num_classes));
+
+    return x;
+}
+
 layer VGG16_inception_1(layer x, const int& num_classes)
 {
     layer l1 = ReLu(BatchNormalization(Conv(x, 20, { 3,3 }, { 1,1 }, "same")));
