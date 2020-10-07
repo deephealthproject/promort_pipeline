@@ -90,7 +90,8 @@ def test_dataset():
 
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['172.17.0.1'], 'promort.patches',
+    #cd = CassandraDataset(ap, ['172.17.0.1'], 'promort.patches',
+    cd = CassandraDataset(ap, ['127.0.0.1'], 'promort.patches',
                           batch_size=32, split_ratios=[7, 1, 2],
                           max_patches=32000, augs=dataset_augs,
                           num_classes=num_classes)

@@ -12,24 +12,28 @@ from pyeddl.tensor import Tensor
 
 import models 
 
+sys.path.insert(0, "../pybind11/build/lib.linux-x86_64-3.6")
+sys.path.insert(0, "../pybind11/build/lib.linux-x86_64-3.8")
 
-def VGG16(in_layer, num_classes):
+from pyhe_init._ext1 import he_normal
+
+def VGG16(in_layer, num_classes, seed=1234):
     x = in_layer
-    x = eddl.ReLu(eddl.Conv(x, 64, [3, 3]))
-    x = eddl.MaxPool(eddl.ReLu(eddl.Conv(x, 64, [3, 3])), [2, 2], [2, 2])
-    x = eddl.ReLu(eddl.Conv(x, 128, [3, 3]))
-    x = eddl.MaxPool(eddl.ReLu(eddl.Conv(x, 128, [3, 3])), [2, 2], [2, 2])
-    x = eddl.ReLu(eddl.Conv(x, 256, [3, 3]))
-    x = eddl.ReLu(eddl.Conv(x, 256, [3, 3]))
-    x = eddl.MaxPool(eddl.ReLu(eddl.Conv(x, 256, [3, 3])), [2, 2], [2, 2])
-    x = eddl.ReLu(eddl.Conv(x, 512, [3, 3]))
-    x = eddl.ReLu(eddl.Conv(x, 512, [3, 3]))
-    x = eddl.MaxPool(eddl.ReLu(eddl.Conv(x, 512, [3, 3])), [2, 2], [2, 2])
-    x = eddl.ReLu(eddl.Conv(x, 512, [3, 3]))
-    x = eddl.ReLu(eddl.Conv(x, 512, [3, 3]))
-    x = eddl.MaxPool(eddl.ReLu(eddl.Conv(x, 512, [3, 3])), [2, 2], [2, 2])
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 64, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(he_normal(eddl.Conv(x, 64, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 128, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(he_normal(eddl.Conv(x, 128, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 256, [3, 3]), seed))
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 256, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(he_normal(eddl.Conv(x, 256, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(he_normal(eddl.Conv(x, 512, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.ReLu(he_normal(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(he_normal(eddl.Conv(x, 512, [3, 3]), seed)), [2, 2], [2, 2])
     x = eddl.Reshape(x, [-1])
-    x = eddl.ReLu(eddl.Dense(x, 256))
+    x = eddl.ReLu(he_normal(eddl.Dense(x, 256), seed))
     x = eddl.Softmax(eddl.Dense(x, num_classes))
     return x
 
@@ -43,7 +47,7 @@ def main(args):
     net = eddl.Model([in_], [out])
     eddl.build(
         net,
-        eddl.rmsprop(1e-6),
+        eddl.rmsprop(1e-4),
         #eddl.sgd(0.001, 0.9),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
@@ -54,10 +58,10 @@ def main(args):
     eddl.setlogfile(net, "promort_VGG16_classification")
     
     training_augs = ecvl.SequentialAugmentationContainer([
-        ecvl.AugResizeDim(size)
-        #ecvl.AugMirror(.5),
-        #ecvl.AugFlip(.5),
-        #ecvl.AugRotate([-180, 180]),
+        ecvl.AugResizeDim(size),
+        ecvl.AugMirror(.5),
+        ecvl.AugFlip(.5),
+        ecvl.AugRotate([-45, 45])
         #ecvl.AugAdditivePoissonNoise([0, 10]),
         #ecvl.AugGammaContrast([0.5, 1.5]),
         #ecvl.AugGaussianBlur([0, 0.8]),

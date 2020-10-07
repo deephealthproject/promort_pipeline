@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
 
     // Define network
     layer in = Input({ 3, size[0],  size[1] });
-    layer out = VGG16_promort(in, num_classes);
+    layer out = VGG16_promort_he(in, num_classes);
     model net = Model({ in }, { out });
 
     // Build model
@@ -113,7 +113,7 @@ int main(int argc, char* argv[])
     vector<float> total_metric;
     Metric* m = getMetric("categorical_accuracy");
 
-    bool save_images = true;
+    bool save_images = false;
     path output_path;
     if (save_images) {
         output_path = "../output_images";
