@@ -6,7 +6,6 @@ from tqdm import trange, tqdm
 
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
-from pyecvl.ecvl import SplitType
 
 def VGG16(in_layer, num_classes):
     x = in_layer
@@ -29,8 +28,8 @@ def VGG16(in_layer, num_classes):
     return x
 
 def cassandra_fit(cass_ds, net, epochs=3):
-    cs = SplitType.training
-    cass_ds.current_split_ = cs
+    cs = 0 # current split = training
+    cass_ds.current_split = cs
     num_batches = cass_ds.num_batches[cs]
     # loop through the epochs
     for e in range(epochs):
@@ -61,9 +60,7 @@ def test_dataset():
         #ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5),
     ])
     
-    dataset_augs = ecvl.DatasetAugmentations(
-        [training_augs, None, None]
-    )
+    dataset_augs = [training_augs, None, None]
 
     in_ = eddl.Input([3, size[0], size[1]])
     out = VGG16(in_, num_classes)

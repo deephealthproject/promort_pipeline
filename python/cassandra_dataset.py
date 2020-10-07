@@ -6,7 +6,6 @@ import pickle
 import PIL
 import PIL.Image
 import pyecvl.ecvl as ecvl
-from pyecvl.ecvl import SplitType
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
 from tqdm import trange, tqdm
@@ -22,8 +21,8 @@ from cassandra.cluster import ExecutionProfile
 class CassandraDataset():
     def __init__(self, auth_prov, cassandra_ips,
                  table, batch_size=8, num_classes=2,
-                 max_patches=None, split_ratios=None, balance=None,
-                 augs=None, seed=None):
+                 max_patches=None, split_ratios=[7,1,2], balance=None,
+                 augs=[], seed=None):
         """Create ECVL Dataset from Cassandra DB
 
         :param auth_prov: Authenticator for Cassandra
@@ -61,24 +60,25 @@ class CassandraDataset():
         self.prep = self.sess.prepare(query)
         ## internal parameters
         self.row_keys = None
-        self.augs_ = augs
+        self.augs = augs
         self.num_classes = num_classes
         self.labs = [2**i for i in range(self.num_classes)]
-        self.max_patches = None
+        self.max_patches = max_patches
         self.batch_size = batch_size
-        self.current_split_ = SplitType.training
-        self.current_index = {}
-        self.raw_batch = {}
-        self.num_batches = {}
+        self.current_split = 0
+        self.current_index = []
+        self.raw_batch = []
+        self.num_batches = []
         self.sample_names = None
         self.n = None
         self._stats = None
         self._rows = None
         self._init_stats()
         self.split = None
+        self.num_splits = len(split_ratios)
         self.balance = None
-        self.split_ratios = None
-        self.split_setup(max_patches, split_ratios, seed=seed)
+        self.split_ratios = np.array(split_ratios)
+        self.split_setup(seed=seed)
     def __del__(self):
         self.cluster.shutdown()
     def _init_stats(self):
@@ -115,11 +115,14 @@ class CassandraDataset():
         pbar.close()
         counters = [[len(s[i]) for i in self.labs] for s in self._rows.values()]
         self._stats = np.array(counters)
-    def _update_params(self, max_patches=None, split_ratios=None,
+    def _update_params(self, max_patches=None, split_ratios=None, augs=None,
                        balance=None, batch_size=None):
         # update batch_size
         if (batch_size is not None):
             self.set_batchsize(batch_size)
+        # update augmentations
+        if (augs is not None):
+            self.augs=augs
         # update number of patches
         if (max_patches is not None):
             self.max_patches=max_patches
@@ -128,9 +131,8 @@ class CassandraDataset():
         # update and normalize split ratios
         if (split_ratios is not None):
             self.split_ratios = np.array(split_ratios)
-        if (self.split_ratios is None): # if None put all in training
-            self.split_ratios = np.array([1,0,0])
         self.split_ratios = self.split_ratios/self.split_ratios.sum()
+        self.num_splits=len(self.split_ratios)
         # update and normalize balance
         if (balance is not None):
             self.balance = np.array(balance)
@@ -138,12 +140,13 @@ class CassandraDataset():
             self.balance = np.ones(self.num_classes)
         assert(self.balance.shape[0]==self.num_classes)
         self.balance = self.balance/self.balance.sum()
-    def split_setup(self, max_patches=None, split_ratios=None,
+    def split_setup(self, max_patches=None, split_ratios=None, augs=None,
                     balance=None, batch_size=None, seed=None):
         """(Re)Insert the patches in the splits, according to split and class ratios
 
         :param max_patches: Number of patches to be read. If None use the current value.
         :param split_ratios: Ratio among training, validation and test. If None use the current value.
+        :param augs: Data augmentations to be used. If None use the current ones.
         :param balance: Ratio among the different classes. If None use the current value.
         :param batch_size: Batch size. If None use the current value.
         :param seed: Seed for random generators
@@ -155,32 +158,32 @@ class CassandraDataset():
         random.seed(seed)
         np.random.seed(seed)
         # update dataset parameters
-        self._update_params(max_patches, split_ratios, balance, batch_size)
+        self._update_params(max_patches=max_patches, split_ratios=split_ratios,
+                            augs=augs, balance=balance, batch_size=batch_size)
         ## partitioning sample names in training, validation and test
         # get a copy of the list of rows
         print('Copying data structures...')
         l_rows = pickle.loads(pickle.dumps(self._rows))
         tots = self._stats.sum(axis=0)
-        stop_at = self.split_ratios.reshape((3,1)) * tots
+        stop_at = self.split_ratios.reshape((-1,1)) * tots
         stop_at[0] = tots # put all scraps in training
         # insert patches into bags until they're full
-        bags = [[], [], []] # train, validation, test
-        cows = np.zeros([3, self.num_classes])
+        bags = [[]]*self.num_splits # bag-0, bag-1, etc.
+        cows = np.zeros([self.num_splits, self.num_classes])
         curr = 0 # current bag
         for (i, p_num) in enumerate(self._stats):
             # check if current bag can hold the sample set, if not increment bag
-            # note: train can always contain a sample set
+            # note: bag-0 (training) can always contain a sample set
             while ((cows[curr]+p_num)>stop_at[curr]).any():
-                curr += 1; curr %= 3
+                curr += 1; curr %= self.num_splits
             bags[curr] += [i]
             cows[curr] += p_num
-            curr += 1; curr %= 3
+            curr += 1; curr %= self.num_splits
         ## insert into the splits, taking into account the target class balance
         borders = self.max_patches * self.split_ratios.cumsum()
         borders = borders.round().astype(int)
-        max_split = [borders[0], # train
-                     borders[1]-borders[0], # validation
-                     borders[2]-borders[1]] # test
+        borders = np.pad(borders, [1,0])
+        max_split = [borders[i+1]-borders[i] for i in range(self.num_splits)]
         def enough_rows(sp, sample_num, lab):
             bag = bags[sp]
             sample_name = self.sample_names[bag[sample_num]]
@@ -196,9 +199,10 @@ class CassandraDataset():
             if (inc>=max_sample): # row not found
                    cur_sample = -1 
             return cur_sample
-        sp_rows = [[], [], []]
+        sp_rows = []
         pbar = tqdm(desc='Choosing patches', total=self.max_patches)
-        for sp in range(3): # for each split
+        for sp in range(self.num_splits): # for each split
+            sp_rows.append([])
             max_sample = len(bags[sp])
             tmp = max_split[sp] * self.balance.cumsum()
             tmp = tmp.round().astype(int)
@@ -221,26 +225,28 @@ class CassandraDataset():
                     pbar.update(1)
         pbar.close()
         # build common sample list
-        self.split = {}
+        self.split = []
         self.row_keys = []
-        sps = [SplitType.training, SplitType.validation, SplitType.test]
         start = 0
-        for sp in range(3):
+        for sp in range(self.num_splits):
+            self.split.append(None)
             sz = len(sp_rows[sp])
             random.shuffle(sp_rows[sp])
             self.row_keys += sp_rows[sp]
-            self.split[sps[sp]] = np.arange(start, start+sz)
+            self.split[sp] = np.arange(start, start+sz)
             start += sz
         self.row_keys = np.array(self.row_keys)
         self.n = self.row_keys.shape[0] # set size
         self._reset_indexes()
     def _reset_indexes(self):
-        splits = [SplitType.training, SplitType.validation, SplitType.test]
-        for sp in splits:
-            self.current_index[sp] = 0
-            self.raw_batch[sp] = None
-            self.num_batches[sp] = \
-                (len(self.split[sp]+self.batch_size-1)//self.batch_size)
+        self.current_index = []
+        self.raw_batch = []
+        self.num_batches = []
+        for sp in range(self.num_splits):
+            self.current_index.append(0)
+            self.raw_batch.append(None)
+            self.num_batches.append(len(self.split[sp]+self.batch_size-1)
+                                    // self.batch_size)
             # preload batches
             self._preload_raw_batch(sp)
     def set_batchsize(self, bs):
@@ -255,7 +261,7 @@ class CassandraDataset():
 
         """
         if (chosen_split is None):
-            splits = [SplitType.training, SplitType.validation, SplitType.test]
+            splits = range(self.num_splits)
         else:
             splits = [chosen_split]
         for sp in splits:
@@ -276,10 +282,10 @@ class CassandraDataset():
         arr = np.array(img) # yxc, RGB
         arr = arr[..., ::-1] # yxc, BGR
         # apply augmentations on eimg and then convert back to array
-        if (self.augs_ is not None):
+        cs = self.current_split
+        if (len(self.augs)>cs and self.augs[cs] is not None):
             eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
-            cs = self.current_split_
-            self.augs_.Apply(cs, eimg)
+            self.augs[cs].Apply(eimg)
             arr = np.array(eimg) #yxc, BGR
         return (arr, lab)
     def _save_futures(self, rows, cs):
@@ -317,7 +323,7 @@ class CassandraDataset():
         :rtype: 
 
         """
-        cs = self.current_split_
+        cs = self.current_split
         # compute batch from preloaded raw data
         batch = self._compute_batch(cs)
         # start preloading the next batch
