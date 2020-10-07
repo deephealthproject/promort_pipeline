@@ -67,6 +67,7 @@ add_subdirectory(cpp)
 add_subdirectory("cpp/metrics")
 add_subdirectory("cpp/models")
 add_subdirectory("cpp/data_generator")
+add_subdirectory("cpp/initializers")
 
 # Set SKIN_LESION_CLASSIFICATION_TRAINING as default
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT PROMORT_CLASSIFICATION_TRAINING)
