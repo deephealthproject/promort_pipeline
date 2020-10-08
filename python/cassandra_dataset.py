@@ -296,11 +296,14 @@ class CassandraDataset():
             futures.append(self.sess.execute_async(self.prep, keys,
                                                    execution_profile='dict'))
         self.raw_batch[cs] = futures
-    def _compute_batch(self, cs):
+    def _get_raw_batch(self, cs):
         items = []
         futures = self.raw_batch[cs]
         for future in futures:
             items.append(future.result().one())
+        return items
+    def _compute_batch(self, cs):
+        items = self._get_raw_batch(cs)
         all = map(self._get_img, items)
         feats, labels = zip(*all) # transpose
         feats = np.array(feats)
