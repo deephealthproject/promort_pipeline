@@ -14,7 +14,7 @@ from tqdm import trange, tqdm
 import cassandra
 from cassandra.cluster import Cluster
 from cassandra.auth import PlainTextAuthProvider
-from cassandra.policies import RoundRobinPolicy
+from cassandra.policies import TokenAwarePolicy, DCAwareRoundRobinPolicy
 from cassandra.cluster import ExecutionProfile
 
 ## ecvl reader for Cassandra
@@ -43,10 +43,12 @@ class CassandraDataset():
         random.seed(seed)
         np.random.seed(seed)
         ## cassandra parameters
-        prof_dict = ExecutionProfile(load_balancing_policy=RoundRobinPolicy(),
-                         row_factory = cassandra.query.dict_factory)
-        prof_tuple = ExecutionProfile(load_balancing_policy=RoundRobinPolicy(),
-                         row_factory = cassandra.query.tuple_factory)
+        prof_dict = ExecutionProfile(
+            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
+            row_factory = cassandra.query.dict_factory)
+        prof_tuple = ExecutionProfile(
+            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
+            row_factory = cassandra.query.tuple_factory)
         profs = {'dict': prof_dict, 'tuple': prof_tuple}
         self.cluster = Cluster(cassandra_ips,
                                execution_profiles=profs,
