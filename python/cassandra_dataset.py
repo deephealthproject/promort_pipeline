@@ -271,25 +271,26 @@ class CassandraDataset():
             # reset index and preload batch
             self.current_index[sp] = 0
             self._preload_raw_batch(sp)
-    def _get_img(self, item):
-        # read label
-        lab = item['label'] # read 32-bit int
-        lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8)) # convert
-                                                                         # to bits
-        lab = lab[-self.num_classes:] # take last num_classes bits
-        # read image
-        raw_img = item['data']
-        in_stream = io.BytesIO(raw_img)
-        img = PIL.Image.open(in_stream) # xyc, RGB
-        arr = np.array(img) # yxc, RGB
-        arr = arr[..., ::-1] # yxc, BGR
-        # apply augmentations on eimg and then convert back to array
-        cs = self.current_split
-        if (len(self.augs)>cs and self.augs[cs] is not None):
-            eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
-            self.augs[cs].Apply(eimg)
-            arr = np.array(eimg) #yxc, BGR
-        return (arr, lab)
+    def _get_img(self, cs):
+        def ret(item):
+            # read label
+            lab = item['label'] # read 32-bit int
+            # convert to bits
+            lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
+            lab = lab[-self.num_classes:] # take last num_classes bits
+            # read image
+            raw_img = item['data']
+            in_stream = io.BytesIO(raw_img)
+            img = PIL.Image.open(in_stream) # xyc, RGB
+            arr = np.array(img) # yxc, RGB
+            arr = arr[..., ::-1] # yxc, BGR
+            # apply augmentations on eimg and then convert back to array
+            if (len(self.augs)>cs and self.augs[cs] is not None):
+                eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
+                self.augs[cs].Apply(eimg)
+                arr = np.array(eimg) #yxc, BGR
+            return (arr, lab)
+        return(ret)
     def _save_futures(self, rows, cs):
         # get whole batch asynchronously
         keys_ = [row.values() for row in rows]
@@ -306,7 +307,7 @@ class CassandraDataset():
         return items
     def _compute_batch(self, cs):
         items = self._get_raw_batch(cs)
-        all = map(self._get_img, items)
+        all = map(self._get_img(cs), items)
         feats, labels = zip(*all) # transpose
         feats = np.array(feats)
         labels = np.array(labels)
@@ -321,14 +322,18 @@ class CassandraDataset():
         self.current_index[cs] += idx_ar.size #increment index
         bb = self.row_keys[idx_ar]
         self._save_futures(bb, cs)
-    def load_batch(self):
+    def load_batch(self, split=None):
         """Read a batch from Cassandra DB.
 
+        :param split: Split to read from (default to current_split)
         :returns: (x,y) with X tensor of features and y tensor of labels
         :rtype: 
 
         """
-        cs = self.current_split
+        if (split is None):
+            cs = self.current_split
+        else:
+            cs = split
         # compute batch from preloaded raw data
         batch = self._compute_batch(cs)
         # start preloading the next batch
