@@ -33,7 +33,7 @@ def cassandra_fit(cass_ds, net, epochs=3):
     num_batches = cass_ds.num_batches[cs]
     # loop through the epochs
     for e in range(epochs):
-        cass_ds.shuffle_splits(cs)
+        cass_ds.rewind_splits(cs, shuffle=True)
         eddl.reset_loss(net)
         # loop through batches
         for b in trange(num_batches):
@@ -102,3 +102,14 @@ def test_dataset():
     cd.split_setup(max_patches=1000, split_ratios=[10,1,1], balance=[2,1])
     cassandra_fit(cd, net, epochs=1)
     
+    # minitest
+    x,y = cd.load_batch()
+    x = np.array(x)
+    for i in range(10):
+        cd.current_index[0]=0
+        cd._preload_raw_batch(0)
+        nx,ny = cd.load_batch()
+        nx = np.array(nx)
+        print((x-nx).max())
+        x=nx
+        
