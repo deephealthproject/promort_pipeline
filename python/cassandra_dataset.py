@@ -8,6 +8,7 @@ import PIL.Image
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
+import time
 import threading
 from tqdm import trange, tqdm
 
@@ -17,6 +18,27 @@ from cassandra.cluster import Cluster
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.policies import TokenAwarePolicy, DCAwareRoundRobinPolicy
 from cassandra.cluster import ExecutionProfile
+
+# Handler for large query results
+class PagedResultHandler():
+    def __init__(self, future):
+        self.all_rows = []
+        self.error = None
+        self.finished_event = threading.Event()
+        self.future = future
+        self.future.add_callbacks(
+            callback=self.handle_page,
+            errback=self.handle_error)
+    def handle_page(self, rows):
+        self.all_rows += rows
+        if self.future.has_more_pages:
+            self.future.start_fetching_next_page()
+        else:
+            self.finished_event.set()
+    def handle_error(self, exc):
+        self.error = exc
+        self.finished_event.set()
+
 
 ## ecvl reader for Cassandra
 class CassandraDataset():
@@ -97,25 +119,33 @@ class CassandraDataset():
         self._rows = {}
         for sn in self.sample_names:
             self._rows[sn]={}
-        def chunks(lst, n):
-            for i in range(0, len(lst), n):
-                yield lst[i:i + n]
         pbar = tqdm(desc='Reading list of patches',
                     total=self.num_classes*len(self.sample_names))
-        conc_lev = 8 # concurrent async queries to cassandra
+        conc_lev = 16 # concurrent async queries to cassandra
         for l in self.labs:
-            for block in chunks(self.sample_names, conc_lev):
-                futures = []
-                for sn in block:
+            loc_names = self.sample_names.copy()
+            futures = []
+            # while there are samples to be processed
+            while (len(loc_names)>0 or len(futures)>0):
+                # fill the pool with samples
+                while (len(loc_names)>0 and len(futures)<conc_lev):
+                    sn = loc_names.pop()
                     res = self.sess.execute_async(prep, (sn, l),
                                                   execution_profile='dict')
-                    futures.append((sn, res))
+                    futures.append((sn, PagedResultHandler(res)))
+                # check if a query slot can be freed
                 for future in futures:
-                    sn, res = future
-                    res = res.result().all()
-                    random.shuffle(res)
-                    self._rows[sn][l] = res
-                    pbar.update(1)
+                    sn, handler = future
+                    if(handler.finished_event.is_set()):
+                        if handler.error:
+                            raise handler.error
+                        res = handler.all_rows
+                        random.shuffle(res)
+                        self._rows[sn][l] = res
+                        futures.remove(future)
+                        pbar.update(1)
+                # sleep 10 ms
+                time.sleep(.01)
         pbar.close()
         counters = [[len(s[i]) for i in self.labs] for s in self._rows.values()]
         self._stats = np.array(counters)
