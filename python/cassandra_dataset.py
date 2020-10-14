@@ -8,13 +8,14 @@ import PIL.Image
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
+import threading
 from tqdm import trange, tqdm
 
 # pip3 install cassandra-driver
 import cassandra
 from cassandra.cluster import Cluster
 from cassandra.auth import PlainTextAuthProvider
-from cassandra.policies import RoundRobinPolicy
+from cassandra.policies import TokenAwarePolicy, DCAwareRoundRobinPolicy
 from cassandra.cluster import ExecutionProfile
 
 ## ecvl reader for Cassandra
@@ -43,10 +44,12 @@ class CassandraDataset():
         random.seed(seed)
         np.random.seed(seed)
         ## cassandra parameters
-        prof_dict = ExecutionProfile(load_balancing_policy=RoundRobinPolicy(),
-                         row_factory = cassandra.query.dict_factory)
-        prof_tuple = ExecutionProfile(load_balancing_policy=RoundRobinPolicy(),
-                         row_factory = cassandra.query.tuple_factory)
+        prof_dict = ExecutionProfile(
+            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
+            row_factory = cassandra.query.dict_factory)
+        prof_tuple = ExecutionProfile(
+            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
+            row_factory = cassandra.query.tuple_factory)
         profs = {'dict': prof_dict, 'tuple': prof_tuple}
         self.cluster = Cluster(cassandra_ips,
                                execution_profiles=profs,
@@ -69,6 +72,7 @@ class CassandraDataset():
         self.current_index = []
         self.raw_batch = []
         self.num_batches = []
+        self.locks = None
         self.sample_names = None
         self.n = None
         self._stats = None
@@ -133,6 +137,8 @@ class CassandraDataset():
             self.split_ratios = np.array(split_ratios)
         self.split_ratios = self.split_ratios/self.split_ratios.sum()
         self.num_splits=len(self.split_ratios)
+        # create a lock per split
+        self.locks=[threading.Lock() for i in range(self.num_splits)]
         # update and normalize balance
         if (balance is not None):
             self.balance = np.array(balance)
@@ -242,20 +248,22 @@ class CassandraDataset():
         self.current_index = []
         self.raw_batch = []
         self.num_batches = []
-        for sp in range(self.num_splits):
-            self.current_index.append(0)
-            self.raw_batch.append(None)
-            self.num_batches.append(len(self.split[sp]+self.batch_size-1)
-                                    // self.batch_size)
-            # preload batches
-            self._preload_raw_batch(sp)
+        for cs in range(self.num_splits):
+            with self.locks[cs]:
+                self.current_index.append(0)
+                self.raw_batch.append(None)
+                self.num_batches.append(len(self.split[cs]+self.batch_size-1)
+                                        // self.batch_size)
+                # preload batches
+                self._preload_raw_batch(cs)
     def set_batchsize(self, bs):
         self.batch_size = bs
         self._reset_indexes()
-    def shuffle_splits(self, chosen_split=None):
-        """Reshuffle rows in chosen split and reset its current index to zero.
+    def rewind_splits(self, chosen_split=None, shuffle=False):
+        """Rewind/reshuffle rows in chosen split and reset its current index
 
-        :param chosen_split: Split to be reshuffled. If None reshuffle all the splits.
+        :param chosen_split: Split to be rewinded. If None rewind all the splits.
+        :param shuffle: Apply random permutation (def: False)
         :returns: 
         :rtype: 
 
@@ -264,30 +272,33 @@ class CassandraDataset():
             splits = range(self.num_splits)
         else:
             splits = [chosen_split]
-        for sp in splits:
-            self.split[sp] = np.random.permutation(self.split[sp])
-            # reset index and preload batch
-            self.current_index[sp] = 0
-            self._preload_raw_batch(sp)
-    def _get_img(self, item):
-        # read label
-        lab = item['label'] # read 32-bit int
-        lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8)) # convert
-                                                                         # to bits
-        lab = lab[-self.num_classes:] # take last num_classes bits
-        # read image
-        raw_img = item['data']
-        in_stream = io.BytesIO(raw_img)
-        img = PIL.Image.open(in_stream) # xyc, RGB
-        arr = np.array(img) # yxc, RGB
-        arr = arr[..., ::-1] # yxc, BGR
-        # apply augmentations on eimg and then convert back to array
-        cs = self.current_split
-        if (len(self.augs)>cs and self.augs[cs] is not None):
-            eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
-            self.augs[cs].Apply(eimg)
-            arr = np.array(eimg) #yxc, BGR
-        return (arr, lab)
+        for cs in splits:
+            with self.locks[cs]:
+                if (shuffle):
+                    self.split[cs] = np.random.permutation(self.split[cs])
+                # reset index and preload batch
+                self.current_index[cs] = 0
+                self._preload_raw_batch(cs)
+    def _get_img(self, cs):
+        def ret(item):
+            # read label
+            lab = item['label'] # read 32-bit int
+            # convert to bits
+            lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
+            lab = lab[-self.num_classes:] # take last num_classes bits
+            # read image
+            raw_img = item['data']
+            in_stream = io.BytesIO(raw_img)
+            img = PIL.Image.open(in_stream) # xyc, RGB
+            arr = np.array(img) # yxc, RGB
+            arr = arr[..., ::-1] # yxc, BGR
+            # apply augmentations on eimg and then convert back to array
+            if (len(self.augs)>cs and self.augs[cs] is not None):
+                eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
+                self.augs[cs].Apply(eimg)
+                arr = np.array(eimg) #yxc, BGR
+            return (arr, lab)
+        return(ret)
     def _save_futures(self, rows, cs):
         # get whole batch asynchronously
         keys_ = [row.values() for row in rows]
@@ -296,12 +307,15 @@ class CassandraDataset():
             futures.append(self.sess.execute_async(self.prep, keys,
                                                    execution_profile='dict'))
         self.raw_batch[cs] = futures
-    def _compute_batch(self, cs):
+    def _get_raw_batch(self, cs):
         items = []
         futures = self.raw_batch[cs]
         for future in futures:
             items.append(future.result().one())
-        all = map(self._get_img, items)
+        return items
+    def _compute_batch(self, cs):
+        items = self._get_raw_batch(cs)
+        all = map(self._get_img(cs), items)
         feats, labels = zip(*all) # transpose
         feats = np.array(feats)
         labels = np.array(labels)
@@ -316,16 +330,21 @@ class CassandraDataset():
         self.current_index[cs] += idx_ar.size #increment index
         bb = self.row_keys[idx_ar]
         self._save_futures(bb, cs)
-    def load_batch(self):
+    def load_batch(self, split=None):
         """Read a batch from Cassandra DB.
 
+        :param split: Split to read from (default to current_split)
         :returns: (x,y) with X tensor of features and y tensor of labels
         :rtype: 
 
         """
-        cs = self.current_split
-        # compute batch from preloaded raw data
-        batch = self._compute_batch(cs)
-        # start preloading the next batch
-        self._preload_raw_batch(cs)
+        if (split is None):
+            cs = self.current_split
+        else:
+            cs = split
+        with self.locks[cs]:
+            # compute batch from preloaded raw data
+            batch = self._compute_batch(cs)
+            # start preloading the next batch
+            self._preload_raw_batch(cs)
         return(batch)
