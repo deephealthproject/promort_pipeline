@@ -39,6 +39,58 @@ class PagedResultHandler():
         self.error = exc
         self.finished_event.set()
 
+# Handler for batch of patches
+class BatchPatchHandler():
+    def __init__(self, tot, num_classes, aug):
+        self.aug = aug
+        self.num_classes = num_classes
+        self.finished_event = threading.Event()
+        self.lock = threading.Lock()
+        self.tot = tot
+        self.cow = 0
+        self.errors = []
+        self.feats = []
+        self.labels = []
+        self.bb = None
+    def add_future(self, future):
+        future.add_callbacks(
+            callback=self.handle_res,
+            errback=self.handle_error)
+    def _get_img(self, item):
+        # read label
+        lab = item['label'] # read 32-bit int
+        # convert to bits
+        lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
+        lab = lab[-self.num_classes:] # take last num_classes bits
+        # read image
+        raw_img = item['data']
+        in_stream = io.BytesIO(raw_img)
+        img = PIL.Image.open(in_stream) # xyc, RGB
+        arr = np.array(img) # yxc, RGB
+        arr = arr[..., ::-1] # yxc, BGR
+        # apply augmentations on eimg and then convert back to array
+        if (self.aug is not None):
+            eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
+            self.aug.Apply(eimg)
+            arr = np.array(eimg) #yxc, BGR
+        return (arr, lab)
+    def handle_res(self, rows):
+        assert(len(rows)==1)
+        item = rows[0]
+        feat, lab = self._get_img(item)
+        self.feats.append(feat)
+        self.labels.append(lab)
+        with self.lock:
+            self.cow += 1
+            if(self.cow==self.tot): # last patch
+                feats = np.array(self.feats)
+                labels = np.array(self.labels)
+                self.bb = (Tensor(feats.transpose(0,3,1,2)), Tensor(labels))
+                self.finished_event.set()
+    def handle_error(self, exc):
+        self.errors.append(exc)
+        self.finished_event.set()
+        
 
 ## ecvl reader for Cassandra
 class CassandraDataset():
@@ -92,7 +144,7 @@ class CassandraDataset():
         self.batch_size = batch_size
         self.current_split = 0
         self.current_index = []
-        self.raw_batch = []
+        self.batch_handler = []
         self.num_batches = []
         self.locks = None
         self.sample_names = None
@@ -276,12 +328,12 @@ class CassandraDataset():
         self._reset_indexes()
     def _reset_indexes(self):
         self.current_index = []
-        self.raw_batch = []
+        self.batch_handler = []
         self.num_batches = []
         for cs in range(self.num_splits):
             with self.locks[cs]:
                 self.current_index.append(0)
-                self.raw_batch.append(None)
+                self.batch_handler.append(None)
                 self.num_batches.append(len(self.split[cs]+self.batch_size-1)
                                         // self.batch_size)
                 # preload batches
@@ -309,49 +361,27 @@ class CassandraDataset():
                 # reset index and preload batch
                 self.current_index[cs] = 0
                 self._preload_raw_batch(cs)
-    def _get_img(self, cs):
-        def ret(item):
-            # read label
-            lab = item['label'] # read 32-bit int
-            # convert to bits
-            lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
-            lab = lab[-self.num_classes:] # take last num_classes bits
-            # read image
-            raw_img = item['data']
-            in_stream = io.BytesIO(raw_img)
-            img = PIL.Image.open(in_stream) # xyc, RGB
-            arr = np.array(img) # yxc, RGB
-            arr = arr[..., ::-1] # yxc, BGR
-            # apply augmentations on eimg and then convert back to array
-            if (len(self.augs)>cs and self.augs[cs] is not None):
-                eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
-                self.augs[cs].Apply(eimg)
-                arr = np.array(eimg) #yxc, BGR
-            return (arr, lab)
-        return(ret)
     def _save_futures(self, rows, cs):
-        # get whole batch asynchronously
+        # choose augmentation
+        aug = None
+        if (len(self.augs)>cs and self.augs[cs] is not None):
+            aug = self.augs[cs]
+        # get and convert whole batch asynchronously
+        handler = BatchPatchHandler(tot=len(rows),
+                                    num_classes=self.num_classes,
+                                    aug=aug)
         keys_ = [row.values() for row in rows]
-        futures = []
         for keys in keys_:
-            futures.append(self.sess.execute_async(self.prep, keys,
-                                                   execution_profile='dict'))
-        self.raw_batch[cs] = futures
-    def _get_raw_batch(self, cs):
-        items = []
-        futures = self.raw_batch[cs]
-        for future in futures:
-            items.append(future.result().one())
-        return items
+            future = self.sess.execute_async(self.prep, keys,
+                                             execution_profile='dict')
+            handler.add_future(future)
+        self.batch_handler[cs]=handler
     def _compute_batch(self, cs):
-        items = self._get_raw_batch(cs)
-        all = map(self._get_img(cs), items)
-        feats, labels = zip(*all) # transpose
-        feats = np.array(feats)
-        labels = np.array(labels)
-        # transpose: byxc, BGR -> bcyx BGR
-        bb = (Tensor(feats.transpose(0,3,1,2)), Tensor(labels))
-        return bb
+        hand = self.batch_handler[cs]
+        hand.finished_event.wait() # wait for data to be ready
+        if (len(hand.errors)>0): # if errors raise exception
+            raise hand.errors[0]
+        return (self.batch_handler[cs].bb)
     def _preload_raw_batch(self, cs):
         if (self.current_index[cs]>=self.split[cs].shape[0]):
             return # end of split, stop prealoding
