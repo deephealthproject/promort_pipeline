@@ -8,6 +8,7 @@ import PIL.Image
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
+import time
 import threading
 from tqdm import trange, tqdm
 
@@ -17,6 +18,79 @@ from cassandra.cluster import Cluster
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.policies import TokenAwarePolicy, DCAwareRoundRobinPolicy
 from cassandra.cluster import ExecutionProfile
+
+# Handler for large query results
+class PagedResultHandler():
+    def __init__(self, future):
+        self.all_rows = []
+        self.error = None
+        self.finished_event = threading.Event()
+        self.future = future
+        self.future.add_callbacks(
+            callback=self.handle_page,
+            errback=self.handle_error)
+    def handle_page(self, rows):
+        self.all_rows += rows
+        if self.future.has_more_pages:
+            self.future.start_fetching_next_page()
+        else:
+            self.finished_event.set()
+    def handle_error(self, exc):
+        self.error = exc
+        self.finished_event.set()
+
+# Handler for batch of patches
+class BatchPatchHandler():
+    def __init__(self, tot, num_classes, aug):
+        self.aug = aug
+        self.num_classes = num_classes
+        self.finished_event = threading.Event()
+        self.lock = threading.Lock()
+        self.tot = tot
+        self.cow = 0
+        self.errors = []
+        self.feats = []
+        self.labels = []
+        self.bb = None
+    def add_future(self, future):
+        future.add_callbacks(
+            callback=self.handle_res,
+            errback=self.handle_error)
+    def _get_img(self, item):
+        # read label
+        lab = item['label'] # read 32-bit int
+        # convert to bits
+        lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
+        lab = lab[-self.num_classes:] # take last num_classes bits
+        # read image
+        raw_img = item['data']
+        in_stream = io.BytesIO(raw_img)
+        img = PIL.Image.open(in_stream) # xyc, RGB
+        arr = np.array(img) # yxc, RGB
+        arr = arr[..., ::-1] # yxc, BGR
+        # apply augmentations on eimg and then convert back to array
+        if (self.aug is not None):
+            eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
+            self.aug.Apply(eimg)
+            arr = np.array(eimg) #yxc, BGR
+        return (arr, lab)
+    def handle_res(self, rows):
+        assert(len(rows)==1)
+        item = rows[0]
+        feat, lab = self._get_img(item)
+        self.feats.append(feat)
+        self.labels.append(lab)
+        with self.lock:
+            self.cow += 1
+            if(self.cow==self.tot): # last patch
+                feats = np.array(self.feats)
+                labels = np.array(self.labels)
+                self.bb = (Tensor(feats.transpose(0,3,1,2)), Tensor(labels))
+                self.finished_event.set()
+    def handle_error(self, exc):
+        self.errors.append(exc)
+        self.finished_event.set()
+        
 
 ## ecvl reader for Cassandra
 class CassandraDataset():
@@ -70,7 +144,7 @@ class CassandraDataset():
         self.batch_size = batch_size
         self.current_split = 0
         self.current_index = []
-        self.raw_batch = []
+        self.batch_handler = []
         self.num_batches = []
         self.locks = None
         self.sample_names = None
@@ -97,28 +171,37 @@ class CassandraDataset():
         self._rows = {}
         for sn in self.sample_names:
             self._rows[sn]={}
-        def chunks(lst, n):
-            for i in range(0, len(lst), n):
-                yield lst[i:i + n]
         pbar = tqdm(desc='Reading list of patches',
                     total=self.num_classes*len(self.sample_names))
-        conc_lev = 8 # concurrent async queries to cassandra
+        conc_lev = 16 # concurrent async queries to cassandra
         for l in self.labs:
-            for block in chunks(self.sample_names, conc_lev):
-                futures = []
-                for sn in block:
+            loc_names = self.sample_names.copy()
+            futures = []
+            # while there are samples to be processed
+            while (len(loc_names)>0 or len(futures)>0):
+                # fill the pool with samples
+                while (len(loc_names)>0 and len(futures)<conc_lev):
+                    sn = loc_names.pop()
                     res = self.sess.execute_async(prep, (sn, l),
                                                   execution_profile='dict')
-                    futures.append((sn, res))
+                    futures.append((sn, PagedResultHandler(res)))
+                # check if a query slot can be freed
                 for future in futures:
-                    sn, res = future
-                    res = res.result().all()
-                    random.shuffle(res)
-                    self._rows[sn][l] = res
-                    pbar.update(1)
+                    sn, handler = future
+                    if(handler.finished_event.is_set()):
+                        if handler.error:
+                            raise handler.error
+                        res = handler.all_rows
+                        random.shuffle(res)
+                        self._rows[sn][l] = res
+                        futures.remove(future)
+                        pbar.update(1)
+                # sleep 10 ms
+                time.sleep(.01)
         pbar.close()
         counters = [[len(s[i]) for i in self.labs] for s in self._rows.values()]
         self._stats = np.array(counters)
+        print(f'Read list of {self._stats.sum()} patches')
     def _update_params(self, max_patches=None, split_ratios=None, augs=None,
                        balance=None, batch_size=None):
         # update batch_size
@@ -246,12 +329,12 @@ class CassandraDataset():
         self._reset_indexes()
     def _reset_indexes(self):
         self.current_index = []
-        self.raw_batch = []
+        self.batch_handler = []
         self.num_batches = []
         for cs in range(self.num_splits):
             with self.locks[cs]:
                 self.current_index.append(0)
-                self.raw_batch.append(None)
+                self.batch_handler.append(None)
                 self.num_batches.append(len(self.split[cs]+self.batch_size-1)
                                         // self.batch_size)
                 # preload batches
@@ -279,49 +362,27 @@ class CassandraDataset():
                 # reset index and preload batch
                 self.current_index[cs] = 0
                 self._preload_raw_batch(cs)
-    def _get_img(self, cs):
-        def ret(item):
-            # read label
-            lab = item['label'] # read 32-bit int
-            # convert to bits
-            lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
-            lab = lab[-self.num_classes:] # take last num_classes bits
-            # read image
-            raw_img = item['data']
-            in_stream = io.BytesIO(raw_img)
-            img = PIL.Image.open(in_stream) # xyc, RGB
-            arr = np.array(img) # yxc, RGB
-            arr = arr[..., ::-1] # yxc, BGR
-            # apply augmentations on eimg and then convert back to array
-            if (len(self.augs)>cs and self.augs[cs] is not None):
-                eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
-                self.augs[cs].Apply(eimg)
-                arr = np.array(eimg) #yxc, BGR
-            return (arr, lab)
-        return(ret)
     def _save_futures(self, rows, cs):
-        # get whole batch asynchronously
+        # choose augmentation
+        aug = None
+        if (len(self.augs)>cs and self.augs[cs] is not None):
+            aug = self.augs[cs]
+        # get and convert whole batch asynchronously
+        handler = BatchPatchHandler(tot=len(rows),
+                                    num_classes=self.num_classes,
+                                    aug=aug)
         keys_ = [row.values() for row in rows]
-        futures = []
         for keys in keys_:
-            futures.append(self.sess.execute_async(self.prep, keys,
-                                                   execution_profile='dict'))
-        self.raw_batch[cs] = futures
-    def _get_raw_batch(self, cs):
-        items = []
-        futures = self.raw_batch[cs]
-        for future in futures:
-            items.append(future.result().one())
-        return items
+            future = self.sess.execute_async(self.prep, keys,
+                                             execution_profile='dict')
+            handler.add_future(future)
+        self.batch_handler[cs]=handler
     def _compute_batch(self, cs):
-        items = self._get_raw_batch(cs)
-        all = map(self._get_img(cs), items)
-        feats, labels = zip(*all) # transpose
-        feats = np.array(feats)
-        labels = np.array(labels)
-        # transpose: byxc, BGR -> bcyx BGR
-        bb = (Tensor(feats.transpose(0,3,1,2)), Tensor(labels))
-        return bb
+        hand = self.batch_handler[cs]
+        hand.finished_event.wait() # wait for data to be ready
+        if (len(hand.errors)>0): # if errors raise exception
+            raise hand.errors[0]
+        return (self.batch_handler[cs].bb)
     def _preload_raw_batch(self, cs):
         if (self.current_index[cs]>=self.split[cs].shape[0]):
             return # end of split, stop prealoding
