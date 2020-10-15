@@ -201,6 +201,7 @@ class CassandraDataset():
         pbar.close()
         counters = [[len(s[i]) for i in self.labs] for s in self._rows.values()]
         self._stats = np.array(counters)
+        print(f'Read list of {self._stats.sum()} patches')
     def _update_params(self, max_patches=None, split_ratios=None, augs=None,
                        balance=None, batch_size=None):
         # update batch_size
