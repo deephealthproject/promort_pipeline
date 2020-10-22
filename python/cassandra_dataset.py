@@ -41,9 +41,11 @@ class PagedResultHandler():
 
 # Handler for batch of patches
 class BatchPatchHandler():
-    def __init__(self, tot, num_classes, aug):
+    def __init__(self, tot, num_classes, aug, label_col, data_col):
         self.aug = aug
         self.num_classes = num_classes
+        self.label_col = label_col
+        self.data_col = data_col
         self.finished_event = threading.Event()
         self.lock = threading.Lock()
         self.tot = tot
@@ -58,12 +60,12 @@ class BatchPatchHandler():
             errback=self.handle_error)
     def _get_img(self, item):
         # read label
-        lab = item['label'] # read 32-bit int
+        lab = item[self.label_col] # read 32-bit int
         # convert to bits
         lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
         lab = lab[-self.num_classes:] # take last num_classes bits
         # read image
-        raw_img = item['data']
+        raw_img = item[self.data_col]
         in_stream = io.BytesIO(raw_img)
         img = PIL.Image.open(in_stream) # xyc, RGB
         arr = np.array(img) # yxc, RGB
@@ -90,25 +92,99 @@ class BatchPatchHandler():
     def handle_error(self, exc):
         self.errors.append(exc)
         self.finished_event.set()
+
+class RowListLoader():
+    def __init__(self, sess, table, partition_cols, id_col,
+                 split_ncols=1, num_classes=2, scan_par=1, seed=None):
+        """Loads the list of patches from Cassandra DB
+
+        :param sess: Cassandra session
+        :param table: Matadata table with ids
+        :param partition_cols: Cassandra partition key (e.g., ['name', 'label'])
+        :param id_col: Cassandra id column for the images (e.g., 'patch_id')
+        :param split_ncols: How many columns of the partition key are to be considered when splitting data (default: 1)
+        :param num_classes: Number of classes (default: 2)
+        :param scan_par: Parallel queries when scanning partitions (increase up to 16 to speed up reading from fast Cassandra servers)
+        :param seed: Seed for random generators
+        :returns: 
+        :rtype: 
+
+        """
+        random.seed(seed)
+        np.random.seed(seed)
+        ## cassandra parameters
+        self.sess = sess
+        self.table = table
+        # other params
+        self.partition_cols = partition_cols
+        self.split_ncols = split_ncols
+        self.id_col = id_col
+        self.seed = seed
+        self.partitions = None
+        self.sample_names = None
+        self._rows = None
+        self.num_classes = num_classes
+        self.labs = [2**i for i in range(self.num_classes)]
+    def scan_db(self, scan_par=1):
+        self.partitions = self.sess.execute(f"SELECT DISTINCT \
+        {', '.join(self.partition_cols)} FROM {self.table} ;",
+                                            execution_profile='tuple', timeout=90)
+        self.partitions = self.partitions.all()
+        self.sample_names = {name[:self.split_ncols] for name in self.partitions}
+        self.sample_names = list(self.sample_names)
+        random.shuffle(self.sample_names)
+        query = f"SELECT {self.id_col} FROM {self.table} \
+        WHERE {'=? AND '.join(self.partition_cols)}=? ;"
+        prep = self.sess.prepare(query)
+        self._rows = {}
+        for sn in self.sample_names:
+            self._rows[sn]={}
+            for l in self.labs:
+                self._rows[sn][l]=[]
+        loc_parts = self.partitions.copy()
+        pbar = tqdm(desc='Scanning Cassandra partitions', total=len(loc_parts))
+        futures = []
+        # while there are partitions to be processed
+        while (len(loc_parts)>0 or len(futures)>0):
+            # fill the pool with samples
+            while (len(loc_parts)>0 and len(futures)<scan_par):
+                part = loc_parts.pop()
+                l = part[-1] # label
+                sn = part[:self.split_ncols] # sample name
+                res = self.sess.execute_async(prep, part,
+                                              execution_profile='dict')
+                futures.append((sn, l, PagedResultHandler(res)))
+            # check if a query slot can be freed
+            for future in futures:
+                sn, l, handler = future
+                if(handler.finished_event.is_set()):
+                    if handler.error:
+                        raise handler.error
+                    res = handler.all_rows
+                    random.shuffle(res)
+                    self._rows[sn][l] += res
+                    futures.remove(future)
+                    pbar.update(1)
+            # sleep 10 ms
+            time.sleep(.01)
+        pbar.close()
+
         
 
 ## ecvl reader for Cassandra
 class CassandraDataset():
-    def __init__(self, auth_prov, cassandra_ips,
-                 table, batch_size=8, num_classes=2,
-                 max_patches=None, split_ratios=[7,1,2], balance=None,
-                 augs=[], seed=None):
+    def __init__(self, auth_prov, cassandra_ips, table, id_col,
+                 label_col='label', data_col='data', num_classes=2,
+                 seed=None):
         """Create ECVL Dataset from Cassandra DB
 
         :param auth_prov: Authenticator for Cassandra
         :param cassandra_ips: List of Cassandra ip's
-        :param table: Table from which data are read
-        :param batch_size: Batch size
-        :param num_classes: Number of classes
-        :param max_patches: Number of patches to be read
-        :param split_ratios: Ratio among training, validation and test
-        :param balance: Ratio among the different classes (defaults to [1, 1, ...])
-        :param augs: Data augmentations to be used
+        :param table: Data table by ids
+        :param id_col: Cassandra id column for the images (e.g., 'patch_id')
+        :param label_col: Cassandra label column (default: 'label')
+        :param data_col: Cassandra blob image column (default: 'data')
+        :param num_classes: Number of classes (default: 2)
         :param seed: Seed for random generators
         :returns: 
         :rtype: 
@@ -116,14 +192,20 @@ class CassandraDataset():
         """
         # seed random generators
         random.seed(seed)
+        if (seed is None):
+            seed = random.getrandbits(32)
+            random.seed(seed)
         np.random.seed(seed)
+        self.seed = seed
+        print(f'Seed used by random generators: {seed}')
         ## cassandra parameters
         prof_dict = ExecutionProfile(
             load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
             row_factory = cassandra.query.dict_factory)
         prof_tuple = ExecutionProfile(
             load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
-            row_factory = cassandra.query.tuple_factory)
+            row_factory = cassandra.query.tuple_factory
+        )
         profs = {'dict': prof_dict, 'tuple': prof_tuple}
         self.cluster = Cluster(cassandra_ips,
                                execution_profiles=profs,
@@ -132,16 +214,19 @@ class CassandraDataset():
         self.cluster.connect_timeout = 10 #seconds
         self.sess = self.cluster.connect()
         self.table = table
-        query = f"SELECT label, data FROM {self.table} WHERE \
-        sample_name=? AND label=? AND sample_rep=? AND x=? AND y=?"
+        self.id_col = id_col
+        self.label_col = label_col
+        self.data_col = data_col
+        query = f"SELECT {self.label_col}, {self.data_col} \
+        FROM {self.table} WHERE {id_col}=?"
         self.prep = self.sess.prepare(query)
         ## internal parameters
         self.row_keys = None
-        self.augs = augs
+        self.augs = None
         self.num_classes = num_classes
         self.labs = [2**i for i in range(self.num_classes)]
-        self.max_patches = max_patches
-        self.batch_size = batch_size
+        self.max_patches = None
+        self.batch_size = None
         self.current_split = 0
         self.current_index = []
         self.batch_handler = []
@@ -149,80 +234,69 @@ class CassandraDataset():
         self.locks = None
         self.sample_names = None
         self.n = None
+        self.tot = None
         self._stats = None
         self._rows = None
-        self._init_stats()
         self.split = None
-        self.num_splits = len(split_ratios)
+        self.num_splits = None
         self.balance = None
-        self.split_ratios = np.array(split_ratios)
-        self.split_setup(seed=seed)
+        self.split_ratios = None
+        #self.read_rows_from_db()
+        #self.split_setup(seed=seed)
     def __del__(self):
         self.cluster.shutdown()
-    def _init_stats(self):
-        self.sample_names = self.sess.execute(f'SELECT DISTINCT sample_name, label \
-        FROM {self.table} ;', execution_profile='tuple')
-        self.sample_names = {name[0] for name in self.sample_names}
-        self.sample_names = list(self.sample_names)
-        random.shuffle(self.sample_names)
-        query = f"SELECT sample_name, label, sample_rep, x, y \
-        FROM {self.table} WHERE sample_name=? and label=? ;"
-        prep = self.sess.prepare(query)
-        self._rows = {}
-        for sn in self.sample_names:
-            self._rows[sn]={}
-        pbar = tqdm(desc='Reading list of patches',
-                    total=self.num_classes*len(self.sample_names))
-        conc_lev = 16 # concurrent async queries to cassandra
-        for l in self.labs:
-            loc_names = self.sample_names.copy()
-            futures = []
-            # while there are samples to be processed
-            while (len(loc_names)>0 or len(futures)>0):
-                # fill the pool with samples
-                while (len(loc_names)>0 and len(futures)<conc_lev):
-                    sn = loc_names.pop()
-                    res = self.sess.execute_async(prep, (sn, l),
-                                                  execution_profile='dict')
-                    futures.append((sn, PagedResultHandler(res)))
-                # check if a query slot can be freed
-                for future in futures:
-                    sn, handler = future
-                    if(handler.finished_event.is_set()):
-                        if handler.error:
-                            raise handler.error
-                        res = handler.all_rows
-                        random.shuffle(res)
-                        self._rows[sn][l] = res
-                        futures.remove(future)
-                        pbar.update(1)
-                # sleep 10 ms
-                time.sleep(.01)
-        pbar.close()
+    def _set_rows(self, rows):
+        self._rows = rows
+        # set sample names
+        self.sample_names = list(self._rows.keys())
+        # set stats
         counters = [[len(s[i]) for i in self.labs] for s in self._rows.values()]
         self._stats = np.array(counters)
-        print(f'Read list of {self._stats.sum()} patches')
+        self.tot = self._stats.sum()
+        print(f'Read list of {self.tot} patches')
+    def save_rows(self, filename):
+        with open(filename, "wb") as f:
+            pickle.dump(self._rows, f)
+    def load_rows(self, filename):
+        print('Loading rows...')
+        with open(filename, "rb") as f:
+            self._set_rows(pickle.load(f))
+    def read_rows_from_db(self, meta_table, partition_cols,
+                           split_ncols=1, scan_par=1):
+        ll = RowListLoader(self.sess, table=meta_table,
+                        partition_cols=partition_cols,
+                        id_col=self.id_col, split_ncols=split_ncols,
+                        num_classes=self.num_classes,
+                        scan_par=scan_par, seed=self.seed)
+        ll.scan_db(scan_par)
+        self._set_rows(ll._rows)
     def _update_params(self, max_patches=None, split_ratios=None, augs=None,
                        balance=None, batch_size=None):
-        # update batch_size
+        # update batch_size, default: 8
         if (batch_size is not None):
-            self.set_batchsize(batch_size)
-        # update augmentations
+            self.batch_size = batch_size
+        if (self.batch_size is None):
+            self.batch_size = 8
+        # update augmentations, default: []
         if (augs is not None):
             self.augs=augs
-        # update number of patches
+        if (self.augs is None):
+            self.augs=[]
+        # update number of patches, default: 1e18
         if (max_patches is not None):
             self.max_patches=max_patches
         if (self.max_patches is None): # if None use all patches
-            self.max_patches=int(1e18) # i.e., large enough number
-        # update and normalize split ratios
+            self.max_patches=int(self.tot)
+        # update and normalize split ratios, default: [1]
         if (split_ratios is not None):
             self.split_ratios = np.array(split_ratios)
+        if (self.split_ratios is None):
+            self.split_ratios = np.array([1])
         self.split_ratios = self.split_ratios/self.split_ratios.sum()
         self.num_splits=len(self.split_ratios)
         # create a lock per split
         self.locks=[threading.Lock() for i in range(self.num_splits)]
-        # update and normalize balance
+        # update and normalize balance, default: uniform
         if (balance is not None):
             self.balance = np.array(balance)
         if (self.balance is None): # default to uniform
@@ -250,9 +324,12 @@ class CassandraDataset():
         self._update_params(max_patches=max_patches, split_ratios=split_ratios,
                             augs=augs, balance=balance, batch_size=batch_size)
         ## partitioning sample names in training, validation and test
-        # get a copy of the list of rows
-        print('Copying data structures...')
-        l_rows = pickle.loads(pickle.dumps(self._rows))
+        # init counter per each partition
+        cow_rows = {}
+        for sn in self._rows.keys():
+            cow_rows[sn]={}
+            for l in self._rows[sn].keys():
+                cow_rows[sn][l]=len(self._rows[sn][l])
         tots = self._stats.sum(axis=0)
         stop_at = self.split_ratios.reshape((-1,1)) * tots
         stop_at[0] = tots # put all scraps in training
@@ -276,7 +353,7 @@ class CassandraDataset():
         def enough_rows(sp, sample_num, lab):
             bag = bags[sp]
             sample_name = self.sample_names[bag[sample_num]]
-            num = len(l_rows[sample_name][lab])
+            num = cow_rows[sample_name][lab]
             return (num>0)
         def find_row(sp, sample_num, lab):
             max_sample = len(bags[sp])
@@ -307,7 +384,9 @@ class CassandraDataset():
                         break
                     bag = bags[sp]
                     sample_name = self.sample_names[bag[cur_sample]]
-                    row = l_rows[sample_name][self.labs[cl]].pop(0)
+                    cow_rows[sample_name][self.labs[cl]] -= 1
+                    idx = cow_rows[sample_name][self.labs[cl]]
+                    row = self._rows[sample_name][self.labs[cl]][idx]
                     sp_rows[sp].append(row)
                     tot+=1
                     cur_sample +=1; cur_sample %= max_sample
@@ -370,7 +449,8 @@ class CassandraDataset():
         # get and convert whole batch asynchronously
         handler = BatchPatchHandler(tot=len(rows),
                                     num_classes=self.num_classes,
-                                    aug=aug)
+                                    aug=aug, label_col=self.label_col,
+                                    data_col=self.data_col)
         keys_ = [row.values() for row in rows]
         for keys in keys_:
             future = self.sess.execute_async(self.prep, keys,
