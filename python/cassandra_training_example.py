@@ -67,7 +67,7 @@ def test_dataset():
     net = eddl.Model([in_], [out])
     eddl.build(
         net,
-        eddl.rmsprop(5e-6),
+        eddl.rmsprop(1e-5),
         #eddl.sgd(0.001, 0.9),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
@@ -87,10 +87,17 @@ def test_dataset():
 
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['172.17.0.1'], 'promort.patches',
-                          batch_size=32, split_ratios=[7, 1, 2],
-                          max_patches=32000, augs=dataset_augs,
-                          num_classes=num_classes)
+    cd = CassandraDataset(ap, ['172.17.0.1'],
+                          table='promort.data_by_ids',
+                          id_col='patch_id', num_classes=num_classes)
+    #cd.read_rows_from_db(meta_table='promort.ids_by_metadata',
+    #                     partition_cols=['sample_name', 'label'])
+    
+    #cd.save_rows('/tmp/rows.pckl')
+    cd.load_rows('/tmp/rows.pckl')
+    cd.split_setup(batch_size=32, split_ratios=[7, 1, 2],
+                   max_patches=100000, augs=dataset_augs,)
+
     ## fit generator
     cassandra_fit(cd, net, epochs=1)
 
