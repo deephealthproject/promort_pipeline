@@ -38,7 +38,7 @@ def main(args):
     size = [256, 256]  # size of images
 
     in_ = eddl.Input([3, size[0], size[1]])
-    out = VGG16(in_, num_classes)
+    out = models.VGG16_promort(in_, num_classes)
     net = eddl.Model([in_], [out])
     eddl.build(
         net,
@@ -116,8 +116,10 @@ def main(args):
             tx, ty = [x], [y]
             #print (tx[0].info())
             eddl.train_batch(net, tx, ty, indices)
-            eddl.print_loss(net, b)
-            print()
+            #eddl.print_loss(net, b)
+            instances = (b+1) * args.batch_size 
+            print ("loss = %.3f, acc = %.3f" % (net.fiterr[0]/instances, net.fiterr[1]/instances))
+            #print()
 
         print("Saving weights")
         eddl.save(net, "promort_checkpoint_%s.bin" % e, "bin")
