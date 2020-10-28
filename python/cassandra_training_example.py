@@ -90,13 +90,14 @@ def test_dataset():
     cd = CassandraDataset(ap, ['172.17.0.1'],
                           table='promort.data_by_ids',
                           id_col='patch_id', num_classes=num_classes)
+
     #cd.read_rows_from_db(meta_table='promort.ids_by_metadata',
     #                     partition_cols=['sample_name', 'label'])
-    
     #cd.save_rows('/tmp/rows.pckl')
+
     cd.load_rows('/tmp/rows.pckl')
     cd.split_setup(batch_size=32, split_ratios=[7, 1, 2],
-                   max_patches=100000, augs=dataset_augs,)
+                   max_patches=100000, augs=dataset_augs)
 
     ## fit generator
     cassandra_fit(cd, net, epochs=1)
