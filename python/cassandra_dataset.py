@@ -77,6 +77,7 @@ class BatchPatchHandler():
         in_stream = io.BytesIO(raw_img)
         img = PIL.Image.open(in_stream) # xyc, RGB
         arr = np.array(img) # yxc, RGB
+        img.close()
         arr = arr[..., ::-1] # yxc, BGR
         # apply augmentations on eimg and then convert back to array
         if (self.aug is not None):
