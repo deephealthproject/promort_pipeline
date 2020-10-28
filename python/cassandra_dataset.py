@@ -41,19 +41,27 @@ class PagedResultHandler():
 
 # Handler for batch of patches
 class BatchPatchHandler():
-    def __init__(self, tot, num_classes, aug, label_col, data_col):
+    def __init__(self, num_classes, aug, label_col, data_col):
         self.aug = aug
         self.num_classes = num_classes
         self.label_col = label_col
         self.data_col = data_col
         self.finished_event = threading.Event()
         self.lock = threading.Lock()
+        self.tot = None
+        self.cow = 0
+        self.errors = []
+        self.feats = []
+        self.labels = []
+        self.bb = None
+    def reset(self, tot):
         self.tot = tot
         self.cow = 0
         self.errors = []
         self.feats = []
         self.labels = []
         self.bb = None
+        self.finished_event.clear()
     def add_future(self, future):
         future.add_callbacks(
             callback=self.handle_res,
@@ -413,7 +421,15 @@ class CassandraDataset():
         for cs in range(self.num_splits):
             with self.locks[cs]:
                 self.current_index.append(0)
-                self.batch_handler.append(None)
+                # set up handlers with augmentations
+                if (len(self.augs)>cs):
+                    aug = self.augs[cs]
+                else:
+                    aug = None
+                handler = BatchPatchHandler(num_classes=self.num_classes,
+                                            aug=aug, label_col=self.label_col,
+                                            data_col=self.data_col)
+                self.batch_handler.append(handler)
                 self.num_batches.append(len(self.split[cs]+self.batch_size-1)
                                         // self.batch_size)
                 # preload batches
@@ -447,16 +463,13 @@ class CassandraDataset():
         if (len(self.augs)>cs and self.augs[cs] is not None):
             aug = self.augs[cs]
         # get and convert whole batch asynchronously
-        handler = BatchPatchHandler(tot=len(rows),
-                                    num_classes=self.num_classes,
-                                    aug=aug, label_col=self.label_col,
-                                    data_col=self.data_col)
+        handler = self.batch_handler[cs]
+        handler.reset(tot=len(rows))
         keys_ = [row.values() for row in rows]
         for keys in keys_:
             future = self.sess.execute_async(self.prep, keys,
                                              execution_profile='dict')
             handler.add_future(future)
-        self.batch_handler[cs]=handler
     def _compute_batch(self, cs):
         hand = self.batch_handler[cs]
         hand.finished_event.wait() # wait for data to be ready
