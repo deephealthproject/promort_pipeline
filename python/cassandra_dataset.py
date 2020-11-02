@@ -1,9 +1,7 @@
 import io
-import itertools
 import numpy as np
 import random
 import pickle
-import PIL
 import PIL.Image
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
@@ -174,6 +172,7 @@ class RowListLoader():
                     self._rows[sn][l] += res
                     futures.remove(future)
                     pbar.update(1)
+                    pbar.set_postfix_str(f'added {len(res):5} patches')
             # sleep 10 ms
             time.sleep(.01)
         pbar.close()
