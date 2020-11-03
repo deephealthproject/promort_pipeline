@@ -78,12 +78,12 @@ int main(int argc, char* argv[])
     setlogfile(net, "skin_lesion_classification");
 
     auto training_augs = make_unique<SequentialAugmentationContainer>(
-        AugResizeDim(size),
-        AugMirror(.5),
-        AugFlip(.5),
-        AugRotate({ -180, 180 }),
+        //AugResizeDim(size),
+        //AugMirror(.5),
+        //AugFlip(.5),
+        //AugRotate({ -180, 180 }),
         //AugAdditivePoissonNoise({ 0, 10 }),
-        AugGammaContrast({ .5,1.5 })
+        //AugGammaContrast({ .5,1.5 })
         //AugGaussianBlur({ .0,.8 }),
         //AugCoarseDropout({ 0, 0.3 }, { 0.02, 0.05 }, 0.5));
 	);
@@ -111,7 +111,7 @@ int main(int argc, char* argv[])
     vector<float> total_metric;
     Metric* m = getMetric("categorical_accuracy");
 
-    bool save_images = true;
+    bool save_images = false;
     path output_path;
     if (save_images) {
         output_path = "../output_images";
@@ -164,7 +164,7 @@ int main(int argc, char* argv[])
             if (d_generator_t.PopBatch(x, y)) {
                 // Preprocessing
                 x->div_(255.0);
-
+		
                 // Train batch
                 train_batch(net, { x }, { y }, indices);
 
@@ -186,6 +186,7 @@ int main(int argc, char* argv[])
         cout << "Saving weights..." << endl;
         save(net, "isic_classification_checkpoint_epoch_" + to_string(i) + ".bin", "bin");
 
+	
         // Evaluation
         d.SetSplit(SplitType::validation);
 
@@ -203,11 +204,12 @@ int main(int argc, char* argv[])
                 x->div_(255.0);
 
                 // Evaluate batch
-                forward(net, { x });
+		forward(net, { x });
                 output = getOutput(out);
 
                 sum = 0.;
-                for (int k = 0; k < batch_size; ++k, ++n) {
+		                
+		for (int k = 0; k < batch_size; ++k, ++n) {
                     result = output->select({ to_string(k) });
                     target = y->select({ to_string(k) });
 
@@ -247,7 +249,7 @@ int main(int argc, char* argv[])
                     delete single_image;
                 }
                 cout << " categorical_accuracy: " << static_cast<float>(sum) / batch_size << endl;
-
+		
                 delete x;
                 delete y;
             }
@@ -261,6 +263,8 @@ int main(int argc, char* argv[])
         of.open("output_evaluate_classification.txt", ios::out | ios::app);
         of << "Epoch " << i << " - Total categorical accuracy: " << total_avg << endl;
         of.close();
+	
+	
     }
 
     delete output;
