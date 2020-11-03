@@ -136,7 +136,12 @@ int main(int argc, char* argv[])
                 //train_batch(net, { x }, { y }, indices);
 		forward(net, { x });
 		output = getOutput(out);
-		cout << output->select({ to_string(0) }) << endl;
+		Tensor* select_tensor = output->select({ to_string(0) });
+		cout << select_tensor << endl;
+		delete output;
+		delete select_tensor;
+		
+		//cout << output->select({ to_string(0) }) << endl;
 
                 // Print errors
                 print_loss(net, j);
@@ -155,8 +160,6 @@ int main(int argc, char* argv[])
         cout << "Epoch elapsed time: " << tm_epoch.getTimeSec() << endl;
 	
     }
-	
-    delete output;
 
     return EXIT_SUCCESS;
 }
