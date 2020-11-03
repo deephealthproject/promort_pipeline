@@ -81,7 +81,7 @@ int main(int argc, char* argv[])
 
     // Read the dataset
     cout << "Reading dataset" << endl;
-    DLDataset d("/DeepHealth/git/promort_pipeline/python/set0_small.yaml", batch_size, move(dataset_augmentations));
+    DLDataset d("/DeepHealth/git/promort_pipeline/python/set0_small_med.yaml", batch_size, move(dataset_augmentations));
     
     // Create producer thread with 'DLDataset d' and 'std::queue q'
     int num_samples = vsize(d.GetSplit());
@@ -94,6 +94,8 @@ int main(int argc, char* argv[])
     DataGenerator d_generator_v(&d, batch_size, size, { vsize(d.classes_) }, 2);
 
     float sum = 0., ca = 0.;
+
+    tensor output;
 
     vector<int> indices(batch_size);
     iota(indices.begin(), indices.end(), 0);
@@ -133,6 +135,8 @@ int main(int argc, char* argv[])
                 // Train batch
                 //train_batch(net, { x }, { y }, indices);
 		forward(net, { x });
+		output = getOutput(out);
+		cout << output->select({ to_string(0) }) << endl;
 
                 // Print errors
                 print_loss(net, j);
@@ -142,6 +146,7 @@ int main(int argc, char* argv[])
             }
             tm.stop();
 
+
             cout << "Elapsed time: " << tm.getTimeSec() << endl;
         }
 
@@ -150,6 +155,8 @@ int main(int argc, char* argv[])
         cout << "Epoch elapsed time: " << tm_epoch.getTimeSec() << endl;
 	
     }
+	
+    delete output;
 
     return EXIT_SUCCESS;
 }
