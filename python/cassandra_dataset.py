@@ -461,21 +461,20 @@ class CassandraDataset():
         self.batch_handler = []
         self.num_batches = []
         for cs in range(self.num_splits):
-            with self.locks[cs]:
-                self.current_index.append(0)
-                # set up handlers with augmentations
-                if (len(self.augs)>cs):
-                    aug = self.augs[cs]
-                else:
-                    aug = None
-                handler = BatchPatchHandler(num_classes=self.num_classes,
-                                            aug=aug, label_col=self.label_col,
-                                            data_col=self.data_col)
-                self.batch_handler.append(handler)
-                self.num_batches.append(len(self.split[cs]+self.batch_size-1)
-                                        // self.batch_size)
-                # preload batches
-                self._preload_raw_batch(cs)
+            self.current_index.append(0)
+            # set up handlers with augmentations
+            if (len(self.augs)>cs):
+                aug = self.augs[cs]
+            else:
+                aug = None
+            handler = BatchPatchHandler(num_classes=self.num_classes,
+                                        aug=aug, label_col=self.label_col,
+                                        data_col=self.data_col)
+            self.batch_handler.append(handler)
+            self.num_batches.append(len(self.split[cs]+self.batch_size-1)
+                                    // self.batch_size)
+            # preload batches
+            self._preload_raw_batch(cs)
     def set_batchsize(self, bs):
         self.batch_size = bs
         self._reset_indexes()
