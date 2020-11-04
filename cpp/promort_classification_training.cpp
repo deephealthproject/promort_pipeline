@@ -134,12 +134,13 @@ int main(int argc, char* argv[])
 		
                 // Train batch
                 //train_batch(net, { x }, { y }, indices);
+		//net->forward({ x });
 		forward(net, { x });
-		output = getOutput(out);
-		Tensor* select_tensor = output->select({ to_string(0) });
-		cout << select_tensor << endl;
-		delete output;
-		delete select_tensor;
+		//output = getOutput(out);
+		//Tensor* select_tensor = output->select({ to_string(0) });
+		//cout << select_tensor << endl;
+		//delete output;
+		//delete select_tensor;
 		
 		//cout << output->select({ to_string(0) }) << endl;
 
