@@ -389,6 +389,17 @@ class CassandraDataset():
         self.cluster.shutdown()
     def init_listmanager(self, meta_table, partition_cols,
                          split_ncols=1):
+        """Initialize the Cassandra list manager which takes care of
+        loading/saving the full list of rows from the DB and creating
+        the splits according to the user input.
+
+        :param meta_table: Metadata table with ids
+        :param partition_cols: Cassandra partition key (e.g., ['name', 'label'])
+        :param split_ncols: How many columns of the partition key are to be considered when splitting data (default: 1)
+        :returns: 
+        :rtype:
+
+        """
         self._clm = CassandraListManager(self.sess, table=meta_table,
                                         partition_cols=partition_cols,
                                         id_col=self.id_col,
@@ -396,19 +407,56 @@ class CassandraDataset():
                                         num_classes=self.num_classes,
                                         seed=self.seed)
     def save_rows(self, filename):
+        """Save full list of DB rows to file
+
+        :param filename: Local filename, as string
+        :returns: 
+        :rtype: 
+
+        """
         with open(filename, "wb") as f:
             pickle.dump(self._clm._rows, f)
     def load_rows(self, filename):
+        """Load full list of DB rows from file
+
+        :param filename: Local filename, as string
+        :returns: 
+        :rtype: 
+
+        """
         print('Loading rows...')
         with open(filename, "rb") as f:
             self._clm.set_rows(pickle.load(f))
     def read_rows_from_db(self, scan_par=1):
+        """Read the full list of rows from the DB.
+
+        :param scan_par: Increase parallelism while scanning Cassandra partitions. It can lead to DB overloading.
+        :returns: 
+        :rtype:
+
+        """
         self._clm.read_rows_from_db(scan_par)
     def save_splits(self, filename):
+        """Save list of split ids.
+
+        :param filename: Local filename, as string
+        :returns: 
+        :rtype: 
+
+        """
         with open(filename, "wb") as f:
             out_vars = (self.row_keys, self.split)
             pickle.dump(out_vars, f)
     def load_splits(self, filename, batch_size=None, augs=None):
+        """Load list of split ids and optionally set batch_size and augmentations.
+
+        :param filename: Local filename, as string
+        :param batch_size: Dataset batch size
+        :param augs: Data augmentations to be used. If None use the current ones.
+        :returns: 
+        :rtype: 
+
+        """
         print('Loading splits...')
         with open(filename, "rb") as f:
             in_vars = pickle.load(f)
@@ -474,8 +522,15 @@ class CassandraDataset():
             self.num_batches.append(len(self.split[cs]+self.batch_size-1)
                                     // self.batch_size)
             # preload batches
-            self._preload_raw_batch(cs)
+            self._preload_batch(cs)
     def set_batchsize(self, bs):
+        """Change dataset batch size
+
+        :param bs: New batch size
+        :returns: 
+        :rtype: 
+
+        """
         self.batch_size = bs
         self._reset_indexes()
     def rewind_splits(self, chosen_split=None, shuffle=False):
@@ -497,7 +552,7 @@ class CassandraDataset():
                     self.split[cs] = np.random.permutation(self.split[cs])
                 # reset index and preload batch
                 self.current_index[cs] = 0
-                self._preload_raw_batch(cs)
+                self._preload_batch(cs)
     def _save_futures(self, rows, cs):
         # choose augmentation
         aug = None
@@ -517,7 +572,7 @@ class CassandraDataset():
         if (len(hand.errors)>0): # if errors raise exception
             raise hand.errors[0]
         return (self.batch_handler[cs].bb)
-    def _preload_raw_batch(self, cs):
+    def _preload_batch(self, cs):
         if (self.current_index[cs]>=self.split[cs].shape[0]):
             return # end of split, stop prealoding
         idx_ar = self.split[cs][self.current_index[cs] :
@@ -529,7 +584,7 @@ class CassandraDataset():
         """Read a batch from Cassandra DB.
 
         :param split: Split to read from (default to current_split)
-        :returns: (x,y) with X tensor of features and y tensor of labels
+        :returns: (x,y) with x tensor of features and y tensor of labels
         :rtype: 
 
         """
@@ -541,5 +596,5 @@ class CassandraDataset():
             # compute batch from preloaded raw data
             batch = self._compute_batch(cs)
             # start preloading the next batch
-            self._preload_raw_batch(cs)
+            self._preload_batch(cs)
         return(batch)
