@@ -5,6 +5,7 @@ PROMORT example.
 import argparse
 import random
 import sys
+from pathlib import Path
 
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
@@ -60,6 +61,28 @@ def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
 
     return net, dataset_augs
 
+def check_db_rows_and_split(cd, args, splits=[7,2,1]):
+    data_size = args.data_size
+    
+    cd.init_listmanager(meta_table='promort.ids_by_metadata',
+                     partition_cols=['sample_name', 'label'])
+    
+    if args.db_rows_fn:
+        if Path(args.db_rows_fn).exists():
+            # If rows file exists load them from file 
+            cd.load_rows(args.db_rows_fn)
+        else:
+            # If rows do not exist, read them from db and save to a pickle
+            cd.read_rows_from_db()
+            cd.save_rows(args.db_rows_fn)
+    else:
+        # If a db_rows_fn is not specified just read them from db
+        cd.read_rows_from_db()
+        
+    ## Create the split and save it
+    cd.split_setup(batch_size=args.batch_size, split_ratios=splits,
+                                 max_patches=data_size, augs=[])
+
 
 def main(args):
     num_classes = 2
@@ -86,19 +109,21 @@ def main(args):
                           table='promort.data_by_ids',
                           id_col='patch_id', num_classes=num_classes)
     
-    if args.load_rows_fn:
-        cd.load_rows(args.load_rows_fn)
-    else:
-        cd.read_rows_from_db(meta_table='promort.ids_by_metadata',
-                             partition_cols=['sample_name', 'label'])
-        if args.save_rows_fn:
-            cd.save_rows(args.save_rows_fn)
-
-    ### Split creation
     data_size = args.data_size
-    cd.split_setup(batch_size=32, split_ratios=[8, 2],
-                   max_patches=data_size, augs=dataset_augs, seed=None)
+    
+    if args.splits_fn:
+        # Check if file exists
+        if Path(args.splits_fn).exists():
+            # Load splits 
+            cd.load_splits(args.splits_fn, batch_size=args.batch_size, augs=dataset_augs)
+        else:
+            check_db_rows_and_split(cd, args)
+            cd.save_splits(args.splits_fn)
+            
+    else:
+        check_db_rows_and_split(cd, args)
 
+    print ('Number of batches for each split (train, val, test):', cd.num_batches)
 
     #################
     #### Training ###
@@ -160,14 +185,11 @@ def main(args):
             n = 0
             x, y = cd.load_batch(1)
             x.div_(255.0)
-            #eddl.forward(net, [x])
-            #output = eddl.getOutput(out)
-            #net.reset()
-            net.forward([x])
-            #output = out.output
+            eddl.forward(net, [x])
+            output = eddl.getOutput(out)
 
             sum_ = 0.0
-            """
+            
             for k in range(x.getShape()[0]):
                 result = output.select([str(k)])
                 target = y.select([str(k)])
@@ -196,10 +218,10 @@ def main(args):
             
             msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - acc: {:.2f} ".format(e + 1, args.epochs, b + 1, num_batches_tr, (sum_ / args.batch_size))
             pbar.set_postfix_str(msg)
-            """ 
+             
         pbar.close()
-        #total_avg = sum(total_metric) / len(total_metric)
-        #print("Total categorical accuracy: {:.2f}\n".format(total_avg))
+        total_avg = sum(total_metric) / len(total_metric)
+        print("Total categorical accuracy: {:.2f}\n".format(total_avg))
 
 
 if __name__ == "__main__":
@@ -214,10 +236,10 @@ if __name__ == "__main__":
     parser.add_argument("--augs-on", action="store_true")
     parser.add_argument("--out-dir", metavar="DIR",
                         help="if set, save images in this directory")
-    parser.add_argument("--load-rows-fn", metavar="STR",
-                        help="if set, load db rows from a pickle file and do read image metadata from db")
-    parser.add_argument("--save-rows-fn", metavar="STR",
-                        help="if set, save db rows to a pickle file after reading image metadata from db")
+    parser.add_argument("--db-rows-fn", metavar="STR",
+                        help="if set, load db rows from a pickle file if it exists or save rows to a pickle after reading image metadata from db")
+    parser.add_argument("--splits-fn", metavar="STR",
+                        help="if set, load splits data from a pickle file if it exists or save splits data to a pickle")
     parser.add_argument("--cassandra-pwd-fn", metavar="STR",
                         help="cassandra password")
     main(parser.parse_args())
