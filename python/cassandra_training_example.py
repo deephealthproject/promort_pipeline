@@ -91,14 +91,27 @@ def test_dataset():
                           table='promort.data_by_ids',
                           id_col='patch_id', num_classes=num_classes)
 
-    #cd.read_rows_from_db(meta_table='promort.ids_by_metadata',
-    #                     partition_cols=['sample_name', 'label'])
-    #cd.save_rows('/tmp/rows.pckl')
+    # read rows from db, create splits and save everything
+    cd.init_listmanager(meta_table='promort.ids_by_metadata',
+                        partition_cols=['sample_name', 'label'])
+    cd.read_rows_from_db()
+    cd.save_rows('/tmp/rows.pckl')
+    cd.split_setup(batch_size=32, split_ratios=[7,1,2],
+                   max_patches=100000, augs=[])
+    cd.save_splits('/tmp/splits.pckl')
 
-    cd.load_rows('/tmp/rows.pckl')
-    cd.split_setup(batch_size=32, split_ratios=[7, 1, 2],
-                   max_patches=100000, augs=dataset_augs)
+    ## load rows, create and save splits
+    #cd.init_listmanager(meta_table='promort.ids_by_metadata',
+    #                    partition_cols=['sample_name', 'label'])
+    #cd.load_rows('/tmp/rows.pckl')
+    #cd.split_setup(batch_size=32, split_ratios=[1],
+    #               max_patches=1000000, augs=[])
+    #cd.save_splits('/tmp/splits.pckl')
 
+    ## load splits
+    #cd.load_splits('/tmp/splits.pckl', batch_size=32, augs=[])
+
+    
     ## fit generator
     cassandra_fit(cd, net, epochs=1)
 
