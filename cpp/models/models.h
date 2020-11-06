@@ -8,7 +8,7 @@ eddl::layer LeNet(eddl::layer x, const int& num_classes);
 
 // Model VGG16
 eddl::layer VGG16(eddl::layer x, const int& num_classes);
-eddl::layer VGG16_promort(eddl::layer x, const int& num_classes);
+eddl::layer VGG16_promort(eddl::layer x, const int& num_classes, int seed=1234);
 eddl::layer VGG16_inception_1(eddl::layer x, const int& num_classes);
 eddl::layer VGG16_inception_2(eddl::layer x, const int& num_classes);
 

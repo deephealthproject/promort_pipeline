@@ -37,24 +37,24 @@ layer VGG16(layer x, const int& num_classes)
     return x;
 }
 
-layer VGG16_promort(layer x, const int& num_classes)
+layer VGG16_promort(layer x, const int& num_classes, int seed)
 {
-    x = ReLu(Conv(x, 64, { 3,3 }));
-    x = MaxPool(ReLu(Conv(x, 64, { 3,3 })), { 2,2 }, { 2,2 });
-    x = ReLu(Conv(x, 128, { 3,3 }));
-    x = MaxPool(ReLu(Conv(x, 128, { 3,3 })), { 2,2 }, { 2,2 });
-    x = ReLu(Conv(x, 256, { 3,3 }));
-    x = ReLu(Conv(x, 256, { 3,3 }));
-    x = MaxPool(ReLu(Conv(x, 256, { 3,3 })), { 2,2 }, { 2,2 });
-    x = ReLu(Conv(x, 512, { 3,3 }));
-    x = ReLu(Conv(x, 512, { 3,3 }));
-    x = MaxPool(ReLu(Conv(x, 512, { 3,3 })), { 2,2 }, { 2,2 });
-    x = ReLu(Conv(x, 512, { 3,3 }));
-    x = ReLu(Conv(x, 512, { 3,3 }));
-    x = MaxPool(ReLu(Conv(x, 512, { 3,3 })), { 2,2 }, { 2,2 });
+    x = ReLu(HeNormal(Conv(x, 64, { 3,3 }), seed));
+    x = MaxPool(ReLu(HeNormal(Conv(x, 64, { 3,3 }), seed)), { 2,2 }, { 2,2 });
+    x = ReLu(HeNormal(Conv(x, 128, { 3,3 }),seed));
+    x = MaxPool(ReLu(HeNormal(Conv(x, 128, { 3,3 }), seed)), { 2,2 }, { 2,2 });
+    x = ReLu(HeNormal(Conv(x, 256, { 3,3 }), seed));
+    x = ReLu(HeNormal(Conv(x, 256, { 3,3 }), seed));
+    x = MaxPool(ReLu(HeNormal(Conv(x, 256, { 3,3 }), seed)), { 2,2 }, { 2,2 });
+    x = ReLu(HeNormal(Conv(x, 512, { 3,3 }), seed));
+    x = ReLu(HeNormal(Conv(x, 512, { 3,3 }), seed));
+    x = MaxPool(ReLu(HeNormal(Conv(x, 512, { 3,3 }), seed)), { 2,2 }, { 2,2 });
+    x = ReLu(HeNormal(Conv(x, 512, { 3,3 }), seed));
+    x = ReLu(HeNormal(Conv(x, 512, { 3,3 }), seed));
+    x = MaxPool(ReLu(HeNormal(Conv(x, 512, { 3,3 }), seed)), { 2,2 }, { 2,2 });
 
     x = Reshape(x, { -1 });
-    x = ReLu(Dense(x, 256));
+    x = ReLu(HeNormal(Dense(x, 256), seed));
     x = Softmax(Dense(x, num_classes));
 
     return x;

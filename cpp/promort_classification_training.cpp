@@ -61,7 +61,7 @@ int main(int argc, char* argv[])
 
     // Build model
     build(net,
-	rmsprop(0.000001f),
+	rmsprop(0.00001f),
         //sgd(0.001f, 0.9f), // Optimizer
         { "soft_cross_entropy" }, // Losses
         { "categorical_accuracy" }, // Metrics
