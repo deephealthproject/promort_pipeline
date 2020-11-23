@@ -574,6 +574,7 @@ class CassandraDataset():
         return (self.batch_handler[cs].bb)
     def _preload_batch(self, cs):
         if (self.current_index[cs]>=self.split[cs].shape[0]):
+            self.current_index[cs]+=1 # register overflow
             return # end of split, stop prealoding
         idx_ar = self.split[cs][self.current_index[cs] :
                                 self.current_index[cs] + self.batch_size]
@@ -598,3 +599,28 @@ class CassandraDataset():
             # start preloading the next batch
             self._preload_batch(cs)
         return(batch)
+    def load_batch_cross(self, not_split=None):
+        """Load batch from random split, excluding not_split (def: current_split)
+
+        To be used for cross-validation
+
+        :param not_split: Split from which data is NOT to be loaded
+        :returns: 
+        :rtype:
+
+        """
+        # set split from which NOT to load
+        if (not_split is None):
+            ns = self.current_split
+        else:
+            ns = not_split
+        # choose current split among the remaining ones
+        ends = np.array([sp.shape[0] for sp in self.split])
+        curr = np.array(self.current_index)
+        ok = curr<=ends # valid splits
+        ok[ns] = False # disable not_split
+        sp_list = np.array(range(self.num_splits))
+        val_list = sp_list[ok]
+        cs = np.random.choice(val_list)
+        # return batch from chosen split
+        return (self.load_batch(cs))
