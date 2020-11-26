@@ -1,0 +1,18 @@
+* Input json's
+  - Origin of coordinates is top-left (as in PIL)
+  - Normal cores go through a tissue-detector filter
+
+* To generate normal/tumor masks
+  - We divide the json's coordinates by a scale-down factor (i.e., 64)
+  - The masks are saved as png files
+
+* Deprecated
+  + xml_gen.parse() to generate xml from csv
+    - serial
+    - execution time: 7 minutes
+  + tum_norm_masks to generate normal cores and tumoral rois masks
+    - Two versions: Spark or straight python multiprocessing 
+** Even older
+   + tissue.tissue_gen_2() to generate tissue masks
+     - Deprecated in final pipeline
+     - Tissue masks are now being computed when annotating via EDDL
