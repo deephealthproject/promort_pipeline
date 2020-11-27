@@ -22,30 +22,31 @@ from tissue_detector import tissue_detector as td
 
 
 def tissue_kernel(scale=64) :
-    def ret(args) :
-        slide, tissuedir, basename, suf = args
-        print(slide, tissuedir, basename, suf)
-        if (not os.path.exists(slide)) :
-            print(f"{slide} does not exist")
-            return
-        # open whole slide
-        wsi = openslide.OpenSlide(slide)
-        sx, sy = wsi.dimensions
-        # computer target dimensions
-        nx, ny = round(sx/scale), round(sy/scale)
-        ds = wsi.get_best_level_for_downsample(scale)
-        lx, ly = wsi.level_dimensions[ds]
-        img = wsi.read_region((0,0), ds, (lx,ly))
-        wsi.close()
-        img = img.convert('RGB').resize((nx,ny))
-        # convert to np array, apply classifier and convert back to PIL.Image
-        ar = np.asarray(img)
+    def ret(arg_list) :
         t_dec = td(model_fn='tissue_detector_model_withglue.bin',
                    gpu=False, th=0.8)
-        t_mask = t_dec.get_tissue_mask(ar, channel_first=False)
-        outname = os.path.join(tissuedir, basename + f'_{suf}.png')
-        t_img = Image.fromarray(t_mask).convert('L')
-        t_img.save(outname)
+        for args in arg_list:
+            slide, tissuedir, basename, suf = args
+            print(slide, tissuedir, basename, suf)
+            if (not os.path.exists(slide)) :
+                print(f"{slide} does not exist")
+                return
+            # open whole slide
+            wsi = openslide.OpenSlide(slide)
+            sx, sy = wsi.dimensions
+            # computer target dimensions
+            nx, ny = round(sx/scale), round(sy/scale)
+            ds = wsi.get_best_level_for_downsample(scale)
+            lx, ly = wsi.level_dimensions[ds]
+            img = wsi.read_region((0,0), ds, (lx,ly))
+            wsi.close()
+            img = img.convert('RGB').resize((nx,ny))
+            # convert to np array, apply classifier and convert back to PIL.Image
+            ar = np.asarray(img)
+            t_mask = t_dec.get_tissue_mask(ar, channel_first=False)
+            outname = os.path.join(tissuedir, basename + f'_{suf}.png')
+            t_img = Image.fromarray(t_mask).convert('L')
+            t_img.save(outname)
     return(ret)
 
 def spark_run():
@@ -72,7 +73,7 @@ def spark_run():
     procs = sc.defaultParallelism
     rdd = sc.parallelize(job_list, numSlices=procs)
     # run tissue detector for each slide
-    rdd.foreach(tissue_kernel())
+    rdd.foreachPartition(tissue_kernel())
     
     
 # run main
