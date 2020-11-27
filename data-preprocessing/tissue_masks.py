@@ -10,6 +10,7 @@ import numpy as np
 import openslide
 import os
 import pickle
+from tissue_detector import tissue_detector as td
 
 
 ## Interactive pyspark
@@ -20,7 +21,7 @@ import pickle
 # /spark/bin/spark-submit --conf spark.cores.max=24 --conf spark.default.parallelism=24 run.py
 
 
-def tissue_kernel(b_clf, scale=64) :
+def tissue_kernel(scale=64) :
     def ret(args) :
         slide, tissuedir, basename, suf = args
         print(slide, tissuedir, basename, suf)
@@ -39,11 +40,9 @@ def tissue_kernel(b_clf, scale=64) :
         img = img.convert('RGB').resize((nx,ny))
         # convert to np array, apply classifier and convert back to PIL.Image
         ar = np.asarray(img)
-        n_px = ar.shape[0]*ar.shape[1]
-        lin_ar = ar.reshape(n_px, 3)
-        clf = b_clf.value
-        pred = clf.predict(lin_ar)
-        t_mask = pred.reshape(ar.shape[:2])
+        t_dec = td(model_fn='tissue_detector_model_withglue.bin',
+                   gpu=False, th=0.8)
+        t_mask = t_dec.get_tissue_mask(ar, channel_first=False)
         outname = os.path.join(tissuedir, basename + f'_{suf}.png')
         t_img = Image.fromarray(t_mask).convert('L')
         t_img.save(outname)
@@ -57,11 +56,6 @@ def spark_run():
     sc = SparkContext(conf=conf)
     spark = SparkSession(sc)
 
-    # broadcast tissue classifier
-    with open('code/tmp/LDA_tissue.pickle', 'rb') as pf:
-        clf = pickle.load(pf)
-    b_clf = sc.broadcast(clf)
-    
     srcdir = '/data/promort/rois.test'
     slidedir='/data/promort/prom2/slides'
     tissuedir='/data/promort/tissue.test' # must have normal and tumor subdirs
@@ -78,7 +72,7 @@ def spark_run():
     procs = sc.defaultParallelism
     rdd = sc.parallelize(job_list, numSlices=procs)
     # run tissue detector for each slide
-    rdd.foreach(tissue_kernel(b_clf))
+    rdd.foreach(tissue_kernel())
     
     
 # run main
