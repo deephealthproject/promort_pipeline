@@ -10,3 +10,7 @@
 * Tissue detection
   - Not required: tissue masks are now being computed when annotating via EDDL
   - Spark program
+
+* Fill Cassandra DB
+  - It uses normal/tumor masks
+  - Spark program
