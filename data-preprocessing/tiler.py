@@ -147,7 +147,7 @@ def get_tiles(params):
 def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
-        cw = CassandraWriter(auth_prov, ['tdmnode02'],
+        cw = CassandraWriter(auth_prov, ['cassandra_db'],
                              'promort.ids_by_metadata_test',
                              'promort.data_by_ids_test')
         cw.save_items(items)

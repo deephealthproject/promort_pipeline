@@ -4,13 +4,13 @@
 
 * To generate normal/tumor masks
   - We divide the json's coordinates by a scale-down factor (i.e., 64)
-  - The masks are saved as png files
+  - The masks are saved as PNG files
   - Spark program
 
 * Tissue detection
-  - Not required: tissue masks are now being computed when annotating via EDDL
+  - Legacy: tissue masks are now being computed via EDDL when annotating
   - Spark program
 
 * Fill Cassandra DB
-  - It uses normal/tumor masks
+  - It uses previously generated normal/tumor masks
   - Spark program
