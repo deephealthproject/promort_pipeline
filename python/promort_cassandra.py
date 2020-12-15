@@ -31,6 +31,7 @@ def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
         eddl.rmsprop(lr),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
+        #eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
         eddl.CS_GPU([1], mem="low_mem") if gpu else eddl.CS_CPU()
         )
 
@@ -40,18 +41,12 @@ def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
     if augs:
         ## Set augmentations
         training_augs = ecvl.SequentialAugmentationContainer([
-            ecvl.AugResizeDim(size),
             ecvl.AugMirror(.5),
             ecvl.AugFlip(.5),
-            ecvl.AugRotate([-45, 45])
-            #ecvl.AugAdditivePoissonNoise([0, 10]),
-            #ecvl.AugGammaContrast([0.5, 1.5]),
-            #ecvl.AugGaussianBlur([0, 0.8]),
-            #ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5)
+            ecvl.AugRotate([-10, 10])
         ])
         
         validation_augs = ecvl.SequentialAugmentationContainer([
-            ecvl.AugResizeDim(size),
         ])
         
         dataset_augs = [training_augs, validation_augs, None]
@@ -91,6 +86,11 @@ def main(args):
     ### Get Network
     net, dataset_augs = get_net(in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpu=args.gpu)
     out = net.layers[-1]
+    
+    ## Load weights if requested
+    if args.init_weights_fn:
+        print ("Loading initialization weights")
+        eddl.load(net, args.init_weights_fn)
 
     #################################
     ### Set database to read data ###
@@ -157,6 +157,7 @@ def main(args):
         
         ### Looping across batches of training data
         pbar = tqdm(range(num_batches_tr))
+        
         for b_index, b in enumerate(pbar):
             x, y = cd.load_batch(0)
             x.div_(255.0)
@@ -189,7 +190,7 @@ def main(args):
             output = eddl.getOutput(out)
 
             sum_ = 0.0
-            
+         
             for k in range(x.getShape()[0]):
                 result = output.select([str(k)])
                 target = y.select([str(k)])
@@ -213,10 +214,9 @@ def main(args):
                         current_path, d.classes_[classe], bname
                     )
                     ecvl.ImWrite(cur_path, img_t)
-            
+                
                 n += 1
-            
-            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - acc: {:.2f} ".format(e + 1, args.epochs, b + 1, num_batches_tr, (sum_ / args.batch_size))
+            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - acc: {:.3f} ".format(e + 1, args.epochs, b + 1, num_batches_val, (sum_ / n))
             pbar.set_postfix_str(msg)
              
         pbar.close()
@@ -236,6 +236,8 @@ if __name__ == "__main__":
     parser.add_argument("--augs-on", action="store_true")
     parser.add_argument("--out-dir", metavar="DIR",
                         help="if set, save images in this directory")
+    parser.add_argument("--init-weights-fn", metavar="DIR",
+                        help="if set, a new set of weight are loaded to start the training")
     parser.add_argument("--db-rows-fn", metavar="STR",
                         help="if set, load db rows from a pickle file if it exists or save rows to a pickle after reading image metadata from db")
     parser.add_argument("--splits-fn", metavar="STR",
