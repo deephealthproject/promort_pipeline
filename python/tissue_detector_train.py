@@ -49,15 +49,25 @@ def read_input(filename, split_ratio=0.7):
     test = shuffled_data[n_train:]
     x_trn = train[:,:3]
     y_trn = train[:,3:]
-    x_test = test[:,:3]
-    y_test = test[:,3:]
     
+    # Class balancing of validation set
+    test_0 = test[test[:, 3] == 1]
+    test_1 = test[test[:, 4] == 1]
+    c0_size = test_0.shape[0]
+    c1_size = test_1.shape[0]
+
+    c_size = min(c0_size, c1_size)
+    
+    test_bal = np.concatenate((test_0[:c_size], test_1[:c_size]),axis=0)
+    x_test = test_bal[:,:3]
+    y_test = test_bal[:,3:]
+
     # Tensor creation
     x_train_t = Tensor.fromarray(x_trn.astype(np.float32))
     y_train_t = Tensor.fromarray(y_trn.astype(np.int32))
     x_test_t = Tensor.fromarray(x_test.astype(np.float32))
     y_test_t = Tensor.fromarray(y_test.astype(np.int32))
-
+    
     return x_train_t, y_train_t, x_test_t, y_test_t
 
 
@@ -81,8 +91,8 @@ def main(args):
 
     ## Fit and evaluation
     eddl.fit(net, [x_train], [y_train], args.batch_size, args.epochs)
-    eddl.evaluate(net, [x_test], [y_test])
-    eddl.save(net, "tissue_detector_model.bin")
+    eddl.evaluate(net, [x_test], [y_test], 1024)
+    #eddl.save(net, "tissue_detector_model.bin")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
