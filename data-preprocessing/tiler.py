@@ -29,8 +29,8 @@ from cassandra.cluster import ExecutionProfile
 
 root = '/data/promort/prom2/'
 slide_root = os.path.join(root, 'slides')
-masks_root = os.path.join(root, 'masks')
-#masks_root = '/data/promort/masks.test/'
+#masks_root = os.path.join(root, 'masks')
+masks_root = '/data/promort/masks.test/'
 ext = '.mrxs'
 
 class CassandraWriter():
@@ -80,7 +80,7 @@ class Tiler():
         self.sample_rep = int(srep)
         self.mask_norm_fn = mask_norm_fn
         self.mask_tum_fn = mask_tum_fn
-        self.pyram_lev = 0 # reading patches from level 0
+        self.pyram_lev = 1 # reading patches from this level
         self.patch_x, self.patch_y = (256, 256)
         self.slide = openslide.OpenSlide(self.slide_fn)
     def __del__(self):
@@ -102,8 +102,11 @@ class Tiler():
     def get_coords(self):
         norm = Image.open(self.mask_norm_fn)
         tum = Image.open(self.mask_tum_fn)
-        ox, oy = self.slide.dimensions
-        nx, ny = round(ox/self.patch_x), round(oy/self.patch_y)
+        d0 = np.array(self.slide.dimensions)
+        dL = np.array(self.slide.level_dimensions[self.pyram_lev])
+        up_x, up_y = d0/dL
+        ox, oy = d0
+        nx, ny = round(ox/(self.patch_x*up_x)), round(oy/(self.patch_y*up_y))
         sc_x = ox/nx; sc_y = oy/ny
         mini_norm = norm.resize((nx, ny))
         mini_tum = tum.resize((nx, ny))
@@ -148,8 +151,8 @@ def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
         cw = CassandraWriter(auth_prov, ['cassandra_db'],
-                             'promort.ids_by_metadata_test',
-                             'promort.data_by_ids_test')
+                             'promort.ids_lev1',
+                             'promort.data_lev1')
         cw.save_items(items)
     return(ret)
     
@@ -163,9 +166,9 @@ def run():
     sc = SparkContext(conf=conf)
     spark = SparkSession(sc)
     
-    parts_0 = 48 # get list of patches
-    parts_1 = 36 # extract patches
-    parts_2 = 18 # write to cassandra
+    parts_0 = 24 #48 # get list of patches
+    parts_1 = 18 #36 # extract patches
+    parts_2 =  9 #18 # write to cassandra
 
     samples = next(os.walk(os.path.join(masks_root,'normal')))[2]
     samples = [s.split('_')[0] for s in samples]
