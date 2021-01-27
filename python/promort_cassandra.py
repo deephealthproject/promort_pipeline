@@ -5,6 +5,7 @@ PROMORT example.
 import argparse
 import random
 import sys
+import os
 from pathlib import Path
 
 import pyecvl.ecvl as ecvl
@@ -16,6 +17,8 @@ from cassandra_dataset import CassandraDataset
 from cassandra.auth import PlainTextAuthProvider
 from getpass import getpass
 from tqdm import trange, tqdm
+import numpy as np
+import pickle 
 
 import models 
 import gc
@@ -80,6 +83,7 @@ def check_db_rows_and_split(cd, args, splits=[7,2,1]):
 
 
 def main(args):
+    net_name = "vgg16"
     num_classes = 2
     size = [256, 256]  # size of images
     
@@ -91,7 +95,22 @@ def main(args):
     if args.init_weights_fn:
         print ("Loading initialization weights")
         eddl.load(net, args.init_weights_fn)
+    
+    ## Check options
+    if args.out_dir:
+        working_dir = "model_cnn_%s_ps.%d_bs_%d_lr_%e" % (net_name, size[0], args.batch_size, args.lr)
+        res_dir = os.path.join(args.out_dir, working_dir)
+        try:
+            os.makedirs(res_dir, exist_ok=False)
+        except:
+            print ("Directory already exists.")
+            sys.exit()
 
+    if args.out_dir and args.save_img:
+        save_img = True
+    else:
+        save_img = False
+    
     #################################
     ### Set database to read data ###
     #################################
@@ -141,20 +160,21 @@ def main(args):
     
     indices = list(range(args.batch_size))
 
+    loss_l = []
+    acc_l = []
+    val_acc_l = []
+    
+
     ### Main loop across epochs
     for e in range(args.epochs):
         print("Epoch {:d}/{:d} - Training".format(e + 1, args.epochs),
               flush=True)
-        if args.out_dir:
-            current_path = os.path.join(args.out_dir, "Epoch_%d" % e)
-            for c in d.classes_:
-                c_dir = os.path.join(current_path, c)
-                os.makedirs(c_dir, exist_ok=True)
-
+        
         cd.rewind_splits(shuffle=True)
         eddl.reset_loss(net)
         total_metric = []
-        
+        total_loss = []
+
         ### Looping across batches of training data
         pbar = tqdm(range(num_batches_tr))
         
@@ -170,14 +190,28 @@ def main(args):
             metr = net.fiterr[1]/instances
             msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, args.epochs, b + 1, num_batches_tr, loss, metr)
             pbar.set_postfix_str(msg)
-            
+            total_loss.append(loss)
+            total_metric.append(metr)
+
+        loss_l.append(np.mean(total_loss))
+        acc_l.append(np.mean(total_metric))
+
         pbar.close()
         
         if args.save_weights:
             print("Saving weights")
-            eddl.save(net, "promort_checkpoint_%s.bin" % e, "bin")
+            path = os.path.join(res_dir, "promort_checkpoint_%s.bin" % e)
+            eddl.save(net, path, "bin")
 
         ### Evaluation on validation set batches
+        total_metric = []
+        
+        if save_img:
+            current_path = os.path.join(args.out_dir, "Epoch_%d" % e)
+            for c in range(num_classes):
+                c_dir = os.path.join(current_path, c)
+                os.makedirs(c_dir, exist_ok=True)
+
         print("Epoch %d/%d - Evaluation" % (e + 1, args.epochs), flush=True)
         
         pbar = tqdm(range(num_batches_val))
@@ -198,7 +232,7 @@ def main(args):
                 total_metric.append(ca)
                 sum_ += ca
                 
-                if args.out_dir:
+                if save_img:
                     result_a = np.array(result, copy=False)
                     target_a = np.array(target, copy=False)
                     classe = np.argmax(result_a).item()
@@ -211,7 +245,7 @@ def main(args):
                     head, tail = os.path.splitext(os.path.basename(filename))
                     bname = "%s_gt_class_%s.png" % (head, gt_class)
                     cur_path = os.path.join(
-                        current_path, d.classes_[classe], bname
+                        current_path, classe, bname
                     )
                     ecvl.ImWrite(cur_path, img_t)
                 
@@ -220,19 +254,26 @@ def main(args):
             pbar.set_postfix_str(msg)
              
         pbar.close()
-        total_avg = sum(total_metric) / len(total_metric)
+        total_avg = np.mean(total_metric)
+        val_acc_l.append(total_avg)
+
         print("Total categorical accuracy: {:.2f}\n".format(total_avg))
 
+    history = {'loss': loss_l, 'acc': acc_l, 'val_acc': val_acc_l}
 
+    pickle.dump(history, open(os.path.join(res_dir, 'history.pickle'), 'wb'))
+
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("in_ds", metavar="INPUT_DATASET")
+    parser.add_argument("--yaml_fn", default=None)
     parser.add_argument("--epochs", type=int, metavar="INT", default=50)
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32)
     parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5)
     parser.add_argument("--data-size", type=int, metavar="INT", default=1000)
     parser.add_argument("--gpu", action="store_true")
     parser.add_argument("--save-weights", action="store_true")
+    parser.add_argument("--save-img", action="store_true")
     parser.add_argument("--augs-on", action="store_true")
     parser.add_argument("--out-dir", metavar="DIR",
                         help="if set, save images in this directory")
