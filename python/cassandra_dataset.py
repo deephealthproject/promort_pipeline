@@ -141,11 +141,15 @@ class CassandraListManager():
         self.balance = None
         self.split_ratios = None
         self.num_splits = None
-    def read_rows_from_db(self, scan_par=1):
+    def read_rows_from_db(self, scan_par=1, sample_whitelist=None):
         self.partitions = self.sess.execute(f"SELECT DISTINCT \
         {', '.join(self.partition_cols)} FROM {self.table} ;",
                                             execution_profile='tuple', timeout=90)
         self.partitions = self.partitions.all()
+        if (sample_whitelist is not None):
+            parts = self.partitions
+            swl = sample_whitelist
+            self.partitions = [p for p in parts if p[:self.split_ncols] in swl]
         self.sample_names = {name[:self.split_ncols] for name in self.partitions}
         self.sample_names = list(self.sample_names)
         random.shuffle(self.sample_names)
@@ -427,7 +431,7 @@ class CassandraDataset():
         print('Loading rows...')
         with open(filename, "rb") as f:
             self._clm.set_rows(pickle.load(f))
-    def read_rows_from_db(self, scan_par=1):
+    def read_rows_from_db(self, scan_par=1, sample_whitelist=None):
         """Read the full list of rows from the DB.
 
         :param scan_par: Increase parallelism while scanning Cassandra partitions. It can lead to DB overloading.
@@ -435,7 +439,7 @@ class CassandraDataset():
         :rtype:
 
         """
-        self._clm.read_rows_from_db(scan_par)
+        self._clm.read_rows_from_db(scan_par, sample_whitelist)
     def save_splits(self, filename):
         """Save list of split ids.
 
