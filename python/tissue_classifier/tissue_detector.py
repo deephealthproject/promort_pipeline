@@ -73,6 +73,7 @@ class tissue_detector:
     def load_model(self, model_weights):
         ## Load the ANN tissue detector model implemented by using pyeddl
         ## Create ANN topology (Same used during training phase)
+        ## The model is assumed being trained by using RGB triplets.
         net = models.tissue_detector_DNN()
         eddl.build(
             net,
@@ -86,7 +87,7 @@ class tissue_detector:
         
         self.model = net
     
-    def get_tissue_mask(self, np_img, channel_first=True):
+    def get_tissue_mask(self, np_img, channel_first=True, BGR=False):
         """
         @np_img: numpy array of a PIL image (x,y,4) if alpha channel is present 
                  or (x, y, 3) if alpha channel not present
@@ -99,6 +100,9 @@ class tissue_detector:
         if channel_first:
             np_img = np_img.transpose((1,2,0)) # Convert to channel last
             
+        if BGR:
+            np_img = np_img[...,::-1] # Convert from BGR to RGB assuming a channel_last image
+
         s = np_img.shape
         n_px = s[0] * s[1]
         np_img = np_img[:,:,:3].reshape(n_px, 3)
@@ -134,7 +138,7 @@ class tissue_detector:
             pil_img = slide.read_region(location=(x0, y0), level=level, size=(delta_x // ds[level], delta_y // ds[level]))
             np_img = np.array(pil_img)
 
-            msk_pred = self.get_tissue_mask(np_img, channel_first=False)
+            msk_pred = self.get_tissue_mask(np_img, channel_first=False, BGR=False)
         else:
             ## Using ECVL
             levels = ecvl.OpenSlideGetLevels(slide_fn)
@@ -143,6 +147,6 @@ class tissue_detector:
             t = ecvl.ImageToTensor(img)
             np_img = t.getdata() # Tensor to numpy array (ecvl read images with channel first)
             
-            msk_pred = self.get_tissue_mask(np_img, channel_first=True)
+            msk_pred = self.get_tissue_mask(np_img, channel_first=True, BGR=True)
 
         return msk_pred
