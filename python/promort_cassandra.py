@@ -62,9 +62,6 @@ def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
 def check_db_rows_and_split(cd, args, splits=[7,2,1]):
     data_size = args.data_size
     
-    cd.init_listmanager(meta_table='promort.ids_by_metadata',
-                     partition_cols=['sample_name', 'label'])
-    
     if args.db_rows_fn:
         if Path(args.db_rows_fn).exists():
             # If rows file exists load them from file 
@@ -73,6 +70,7 @@ def check_db_rows_and_split(cd, args, splits=[7,2,1]):
             # If rows do not exist, read them from db and save to a pickle
             cd.read_rows_from_db()
             cd.save_rows(args.db_rows_fn)
+            cd.init_datatable(table='promort.data_1')
     else:
         # If a db_rows_fn is not specified just read them from db
         cd.read_rows_from_db()
@@ -80,6 +78,7 @@ def check_db_rows_and_split(cd, args, splits=[7,2,1]):
     ## Create the split and save it
     cd.split_setup(batch_size=args.batch_size, split_ratios=splits,
                                  max_patches=data_size, augs=[])
+    cd.save_splits('/tmp/splits.pckl')
 
 
 def main(args):
@@ -101,7 +100,7 @@ def main(args):
         working_dir = "model_cnn_%s_ps.%d_bs_%d_lr_%e" % (net_name, size[0], args.batch_size, args.lr)
         res_dir = os.path.join(args.out_dir, working_dir)
         try:
-            os.makedirs(res_dir, exist_ok=False)
+            os.makedirs(res_dir, exist_ok=True)
         except:
             print ("Directory already exists.")
             sys.exit()
@@ -123,10 +122,12 @@ def main(args):
 
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    
-    cd = CassandraDataset(ap, ['127.0.0.1'],
-                          table='promort.data_by_ids',
-                          id_col='patch_id', num_classes=num_classes)
+    #cd = CassandraDataset(ap, ['cassandra_db'])
+    cd = CassandraDataset(ap, ['127.0.0.1'])
+
+    cd.init_listmanager(meta_table='promort.ids_1', id_col='patch_id',
+                        split_ncols=2, num_classes=num_classes, 
+                        partition_cols=['sample_name', 'sample_rep', 'label'])
     
     data_size = args.data_size
     
@@ -144,9 +145,9 @@ def main(args):
 
     print ('Number of batches for each split (train, val, test):', cd.num_batches)
 
-    #################
-    #### Training ###
-    #################
+    ################################
+    #### Training and evaluation ###
+    ################################
 
     print("Defining metric...", flush=True)
     
@@ -166,7 +167,11 @@ def main(args):
     
 
     ### Main loop across epochs
+    
     for e in range(args.epochs):
+
+        ### Training 
+        cd.current_split = 0 ## Set the training split as the current one
         print("Epoch {:d}/{:d} - Training".format(e + 1, args.epochs),
               flush=True)
         
@@ -179,7 +184,7 @@ def main(args):
         pbar = tqdm(range(num_batches_tr))
         
         for b_index, b in enumerate(pbar):
-            x, y = cd.load_batch(0)
+            x, y = cd.load_batch()
             x.div_(255.0)
             tx, ty = [x], [y]
             eddl.train_batch(net, tx, ty)
@@ -204,6 +209,7 @@ def main(args):
             eddl.save(net, path, "bin")
 
         ### Evaluation on validation set batches
+        cd.current_split = 1 ## Set validation split as the current one
         total_metric = []
         
         if save_img:
@@ -218,7 +224,7 @@ def main(args):
 
         for b_index, b in enumerate(pbar):
             n = 0
-            x, y = cd.load_batch(1)
+            x, y = cd.load_batch()
             x.div_(255.0)
             eddl.forward(net, [x])
             output = eddl.getOutput(out)
