@@ -63,7 +63,7 @@ def main(args):
     os.makedirs(res_dir, exist_ok=True)
     fn = os.path.join(res_dir, "pred.csv")
     fd = open(fn, "w")
-    fd.write("patch_id,normal_p,tumor_p,normal_gt,tumor_gt")
+    fd.write("patch_id,normal_p,tumor_p,normal_gt,tumor_gt\n")
     
     if args.save_img:
         save_img = True
