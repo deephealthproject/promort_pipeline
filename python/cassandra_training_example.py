@@ -75,42 +75,37 @@ def test_dataset():
         )
     eddl.summary(net)    
 
-    ## read cassandra password
-    # ask user:
-    cass_pass = getpass('Insert Cassandra password: ')
-    # read from local, untracked file:
-    #   cass_pass = ''
-    #   try: 
-    #       from private_data import cass_pass
-    #   except ImportError:
-    #      pass
-
-    # create cassandra reader
+    # Read Cassandra password
+    try: 
+        from private_data import cass_pass
+    except ImportError:
+        cass_pass = getpass('Insert Cassandra password: ')
+        
+    # Init Cassandra dataset with server address
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['172.17.0.1'],
-                          table='promort.data_by_ids',
-                          id_col='patch_id', num_classes=num_classes)
+    cd = CassandraDataset(ap, ['cassandra_db'])
 
-    # read rows from db, create splits and save everything
-    cd.init_listmanager(meta_table='promort.ids_by_metadata',
-                        partition_cols=['sample_name', 'label'])
+    # Flow 0: read rows from db, create splits and save everything
+    cd.init_listmanager(meta_table='promort.ids_1', id_col='patch_id',
+                        split_ncols=2, num_classes=2, 
+                        partition_cols=['sample_name', 'sample_rep', 'label'])
     cd.read_rows_from_db()
     cd.save_rows('/tmp/rows.pckl')
-    cd.split_setup(batch_size=32, split_ratios=[7,1,2],
+    cd.init_datatable(table='promort.data_1')
+    cd.split_setup(batch_size=32, split_ratios=[7,2,1],
                    max_patches=100000, augs=[])
     cd.save_splits('/tmp/splits.pckl')
 
-    ## load rows, create and save splits
-    #cd.init_listmanager(meta_table='promort.ids_by_metadata',
-    #                    partition_cols=['sample_name', 'label'])
+    ## Flow 1: read saved rows, create and save splits
     #cd.load_rows('/tmp/rows.pckl')
-    #cd.split_setup(batch_size=32, split_ratios=[1],
-    #               max_patches=1000000, augs=[])
+    #cd.init_datatable(table='promort.data_1')
+    #cd.split_setup(batch_size=32, split_ratios=[7,2,1],
+    #               max_patches=100000, augs=[])
     #cd.save_splits('/tmp/splits.pckl')
 
-    ## load splits
+    ## Flow 2: read saved splits
     #cd.load_splits('/tmp/splits.pckl', batch_size=32, augs=[])
-
+    
     
     ## fit generator
     cassandra_fit(cd, net, epochs=1)

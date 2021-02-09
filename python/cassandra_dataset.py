@@ -327,18 +327,11 @@ class CassandraListManager():
 
 ## ecvl reader for Cassandra
 class CassandraDataset():
-    def __init__(self, auth_prov, cassandra_ips, table, id_col,
-                 label_col='label', data_col='data', num_classes=2,
-                 seed=None):
+    def __init__(self, auth_prov, cassandra_ips, seed=None):
         """Create ECVL Dataset from Cassandra DB
 
         :param auth_prov: Authenticator for Cassandra
         :param cassandra_ips: List of Cassandra ip's
-        :param table: Data table by ids
-        :param id_col: Cassandra id column for the images (e.g., 'patch_id')
-        :param label_col: Cassandra label column (default: 'label')
-        :param data_col: Cassandra blob image column (default: 'data')
-        :param num_classes: Number of classes (default: 2)
         :param seed: Seed for random generators
         :returns: 
         :rtype: 
@@ -367,18 +360,17 @@ class CassandraDataset():
                                auth_provider=auth_prov)
         self.cluster.connect_timeout = 10 #seconds
         self.sess = self.cluster.connect()
-        self.table = table
-        self.id_col = id_col
-        self.label_col = label_col
-        self.data_col = data_col
-        query = f"SELECT {self.label_col}, {self.data_col} \
-        FROM {self.table} WHERE {id_col}=?"
-        self.prep = self.sess.prepare(query)
+        # query variables
+        self.table = None
+        self.id_col = None
+        self.label_col = None
+        self.data_col = None
+        self.num_classes = None
+        query = None
+        self.prep = None
         ## internal parameters
         self.row_keys = None
         self.augs = None
-        self.num_classes = num_classes
-        self.labs = [2**i for i in range(self.num_classes)]
         self.batch_size = None
         self.current_split = 0
         self.current_index = []
@@ -388,28 +380,49 @@ class CassandraDataset():
         self.n = None
         self.split = None
         self.num_splits = None
-        self._clm = None # Cassandr list manager
+        self._clm = None # Cassandra list manager
     def __del__(self):
         self.cluster.shutdown()
-    def init_listmanager(self, meta_table, partition_cols,
-                         split_ncols=1):
-        """Initialize the Cassandra list manager which takes care of
-        loading/saving the full list of rows from the DB and creating
-        the splits according to the user input.
+    def init_listmanager(self, meta_table, partition_cols, id_col,
+                         split_ncols=1, num_classes=2):
+        """Initialize the Cassandra list manager.
+
+        It takes care of loading/saving the full list of rows from the
+        DB and creating the splits according to the user input.
 
         :param meta_table: Metadata table with ids
         :param partition_cols: Cassandra partition key (e.g., ['name', 'label'])
+        :param id_col: Cassandra id column for the images (e.g., 'patch_id')
         :param split_ncols: How many columns of the partition key are to be considered when splitting data (default: 1)
+        :param num_classes: Number of classes (default: 2)
         :returns: 
-        :rtype:
+        :rtype: 
 
         """
+        self.id_col = id_col
+        self.num_classes = num_classes
         self._clm = CassandraListManager(self.sess, table=meta_table,
                                         partition_cols=partition_cols,
                                         id_col=self.id_col,
                                         split_ncols=split_ncols,
                                         num_classes=self.num_classes,
                                         seed=self.seed)
+    def init_datatable(self, table, label_col='label', data_col='data'):
+        """Setup queries for db table containing raw data
+
+        :param table: Data table by ids
+        :param label_col: Cassandra label column (default: 'label')
+        :param data_col: Cassandra blob image column (default: 'data')
+        :returns: 
+        :rtype: 
+
+        """
+        self.table = table
+        self.label_col = label_col
+        self.data_col = data_col
+        query = f"SELECT {self.label_col}, {self.data_col} \
+        FROM {self.table} WHERE {self.id_col}=?"
+        self.prep = self.sess.prepare(query)
     def save_rows(self, filename):
         """Save full list of DB rows to file
 
@@ -418,8 +431,12 @@ class CassandraDataset():
         :rtype: 
 
         """
+        stuff = (self._clm.table, self._clm.partition_cols,
+                 self._clm.split_ncols, self.id_col, self.num_classes,
+                 self._clm._rows)
+
         with open(filename, "wb") as f:
-            pickle.dump(self._clm._rows, f)
+            pickle.dump(stuff, f)
     def load_rows(self, filename):
         """Load full list of DB rows from file
 
@@ -430,7 +447,16 @@ class CassandraDataset():
         """
         print('Loading rows...')
         with open(filename, "rb") as f:
-            self._clm.set_rows(pickle.load(f))
+            stuff = pickle.load(f)
+
+        (clm_table, clm_partition_cols, clm_split_ncols, self.id_col,
+         self.num_classes, clm_rows) = stuff
+ 
+        self.init_listmanager(meta_table=clm_table,
+                              partition_cols=clm_partition_cols,
+                              split_ncols=clm_split_ncols, id_col=self.id_col,
+                              num_classes=self.num_classes)
+        self._clm.set_rows(clm_rows)
     def read_rows_from_db(self, scan_par=1, sample_whitelist=None):
         """Read the full list of rows from the DB.
 
@@ -448,9 +474,12 @@ class CassandraDataset():
         :rtype: 
 
         """
+        stuff = (self._clm.table, self._clm.partition_cols,
+                 self._clm.split_ncols, self.id_col, self.num_classes,
+                 self.table, self.label_col, self.data_col,
+                 self.row_keys, self.split)
         with open(filename, "wb") as f:
-            out_vars = (self.row_keys, self.split)
-            pickle.dump(out_vars, f)
+            pickle.dump(stuff, f)
     def load_splits(self, filename, batch_size=None, augs=None):
         """Load list of split ids and optionally set batch_size and augmentations.
 
@@ -463,8 +492,21 @@ class CassandraDataset():
         """
         print('Loading splits...')
         with open(filename, "rb") as f:
-            in_vars = pickle.load(f)
-            self.row_keys, self.split = in_vars
+            stuff = pickle.load(f)
+
+        (clm_table, clm_partition_cols,
+         clm_split_ncols, self.id_col, self.num_classes,
+         table, label_col, data_col,
+         self.row_keys, self.split) = stuff
+            
+        # recreate listmanager
+        self.init_listmanager(meta_table=clm_table,
+                              partition_cols=clm_partition_cols,
+                              split_ncols=clm_split_ncols, id_col=self.id_col,
+                              num_classes=self.num_classes)
+        # init data table
+        self.init_datatable(table=table, label_col=label_col, data_col=data_col)
+        # reload splits
         self.n = self.row_keys.shape[0] # set size
         num_splits = len(self.split)
         self._update_split_params(num_splits=num_splits, augs=augs,
