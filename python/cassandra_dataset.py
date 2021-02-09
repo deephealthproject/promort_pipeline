@@ -87,9 +87,9 @@ class BatchPatchHandler():
         assert(len(rows)==1)
         item = rows[0]
         feat, lab = self._get_img(item)
-        self.feats.append(feat)
-        self.labels.append(lab)
         with self.lock:
+            self.feats.append(feat)
+            self.labels.append(lab)
             self.cow += 1
             if(self.cow==self.tot): # last patch
                 feats = np.array(self.feats)
