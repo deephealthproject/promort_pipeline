@@ -51,6 +51,7 @@ class BatchPatchHandler():
         self.errors = []
         self.feats = []
         self.labels = []
+        self.perm = []
         self.bb = None
     def reset(self, tot):
         self.tot = tot
@@ -58,11 +59,12 @@ class BatchPatchHandler():
         self.errors = []
         self.feats = []
         self.labels = []
+        self.perm = []
         self.bb = None
         self.finished_event.clear()
-    def add_future(self, future):
+    def add_future(self, future, idx):
         future.add_callbacks(
-            callback=self.handle_res,
+            callback=self.handle_res(idx),
             errback=self.handle_error)
     def _get_img(self, item):
         # read label
@@ -83,19 +85,28 @@ class BatchPatchHandler():
             self.aug.Apply(eimg)
             arr = np.array(eimg) #yxc, BGR
         return (arr, lab)
-    def handle_res(self, rows):
-        assert(len(rows)==1)
-        item = rows[0]
-        feat, lab = self._get_img(item)
-        with self.lock:
-            self.feats.append(feat)
-            self.labels.append(lab)
-            self.cow += 1
-            if(self.cow==self.tot): # last patch
-                feats = np.array(self.feats)
-                labels = np.array(self.labels)
-                self.bb = (Tensor(feats.transpose(0,3,1,2)), Tensor(labels))
-                self.finished_event.set()
+    def handle_res(self, idx):
+        def fun(rows):
+            assert(len(rows)==1)
+            item = rows[0]
+            feat, lab = self._get_img(item)
+            with self.lock:
+                self.feats.append(feat)
+                self.labels.append(lab)
+                self.perm.append(idx)
+                self.cow += 1
+                if(self.cow==self.tot): # last patch
+                    # recover original order of images
+                    sh = []
+                    for (i,x) in enumerate(self.perm):
+                        sh.append([x,i])
+                    sh = np.array(sorted(sh))[:,1]
+                    # reorder data and conclude
+                    feats = np.array(self.feats)[sh]
+                    labels = np.array(self.labels)[sh]
+                    self.bb = (Tensor(feats.transpose(0,3,1,2)), Tensor(labels))
+                    self.finished_event.set()
+        return fun
     def handle_error(self, exc):
         self.errors.append(exc)
         self.finished_event.set()
@@ -608,10 +619,10 @@ class CassandraDataset():
         handler = self.batch_handler[cs]
         handler.reset(tot=len(rows))
         keys_ = [row.values() for row in rows]
-        for keys in keys_:
+        for idx, keys in enumerate(keys_):
             future = self.sess.execute_async(self.prep, keys,
                                              execution_profile='dict')
-            handler.add_future(future)
+            handler.add_future(future, idx)
     def _compute_batch(self, cs):
         hand = self.batch_handler[cs]
         hand.finished_event.wait() # wait for data to be ready
