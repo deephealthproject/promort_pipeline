@@ -92,7 +92,7 @@ def main(args):
     ## Fit and evaluation
     eddl.fit(net, [x_train], [y_train], args.batch_size, args.epochs)
     eddl.evaluate(net, [x_test], [y_test], 1024)
-    #eddl.save(net, "tissue_detector_model.bin")
+    eddl.save(net, "tissue_detector_model.bin")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
