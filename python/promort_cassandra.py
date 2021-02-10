@@ -191,8 +191,10 @@ def main(args):
             
             #print bratch train results
             instances = (b_index+1) * args.batch_size
-            loss = net.fiterr[0]/instances
-            metr = net.fiterr[1]/instances
+            loss = eddl.get_losses(net)[0]
+            metr = eddl.get_metrics(net)[0]
+            #loss = net.fiterr[0]/instances
+            #metr = net.fiterr[1]/instances
             msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, args.epochs, b + 1, num_batches_tr, loss, metr)
             pbar.set_postfix_str(msg)
             total_loss.append(loss)
