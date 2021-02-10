@@ -609,6 +609,7 @@ class CassandraDataset():
                     self.split[cs] = np.random.permutation(self.split[cs])
                 # reset index and preload batch
                 self.current_index[cs] = 0
+                self._compute_batch(cs) # wait for handler to finish
                 self._preload_batch(cs)
     def _save_futures(self, rows, cs):
         # choose augmentation
