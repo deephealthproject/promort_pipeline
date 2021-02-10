@@ -43,6 +43,7 @@ def get_net(in_size=[256,256], num_classes=2, gpu=True):
    
     return net
 
+
 def main(args):
     net_name = "vgg16"
     num_classes = 2
@@ -65,10 +66,6 @@ def main(args):
     fd = open(fn, "w")
     fd.write("patch_id,normal_p,tumor_p,normal_gt,tumor_gt\n")
     
-    if args.save_img:
-        save_img = True
-    else:
-        save_img = False
     
     #################################
     ### Set database to read data ###
@@ -118,16 +115,10 @@ def main(args):
     ### Evaluation on validation set batches
     total_metric = []
     
-    if save_img:
-        current_path = os.path.join(args.out_dir, "images")
-        for c in range(num_classes):
-            c_dir = os.path.join(current_path, c)
-            os.makedirs(c_dir, exist_ok=True)
-
     pbar = tqdm(range(num_batches))
 
     for b_index, b in enumerate(pbar):
-        ids = cd.row_keys[cd.split[si][:indexes]]
+        ids = rows[indexes-cd.batch_size:indexes] 
         
         n = 0
         x, y = cd.load_batch()
@@ -136,7 +127,7 @@ def main(args):
         output = eddl.getOutput(out)
         
         sum_ = 0.0
-     
+        
         for k in range(x.getShape()[0]):
             result = output.select([str(k)])
             target = y.select([str(k)])
@@ -146,31 +137,14 @@ def main(args):
             
             p_id = ids[k]
             result_np = result.getdata()[0]
-            gt = target.getdata()[0]
+            gt_np = target.getdata()[0]
             normal_p = result_np[0]
             tumor_p = result_np[1]
-            normal_gt = gt[0]
-            tumor_gt = gt[1]
+            normal_gt = gt_np[0]
+            tumor_gt = gt_np[1]
 
             fd.write('%s,%.2f,%.2f,%.2f,%.2f\n' % (p_id, normal_p, tumor_p, normal_gt, tumor_gt))
 
-            if save_img:
-                result_a = np.array(result, copy=False)
-                target_a = np.array(target, copy=False)
-                classe = np.argmax(result_a).item()
-                gt_class = np.argmax(target_a).item()
-                single_image = x.select([str(k)])
-                img_t = ecvl.TensorToView(single_image)
-                img_t.colortype_ = ecvl.ColorType.BGR
-                single_image.mult_(255.)
-                filename = d.samples_[d.GetSplit()[n]].location_[0]
-                head, tail = os.path.splitext(os.path.basename(filename))
-                bname = "%s_gt_class_%s.png" % (head, gt_class)
-                cur_path = os.path.join(
-                    current_path, classe, bname
-                )
-                ecvl.ImWrite(cur_path, img_t)
-            
             n += 1
         
         indexes = cd.current_index[si]
@@ -188,7 +162,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32)
     parser.add_argument("--gpu", action="store_true")
-    parser.add_argument("--save-img", action="store_true")
     parser.add_argument("--out-dir", metavar="DIR", required=True,
                         help="if set, save images in this directory")
     parser.add_argument("--weights-fn", metavar="DIR", required=True,
