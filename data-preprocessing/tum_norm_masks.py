@@ -45,13 +45,17 @@ def mask_kernel(args, scale=64) :
     if (not os.path.exists(slide)) :
         print(f"{slide} does not exist")
         return
-    csvdir = list(os.walk(csvroot))[1][0]
     wsi = openslide.OpenSlide(slide)
     sx, sy = wsi.dimensions
     wsi.close()
     nx, ny = round(sx/scale), round(sy/scale)
     img = Image.new('L', (nx, ny), 0)
-    for fn in scan_csv(csvdir, csvfile, lab):
+    if (not os.path.exists(csvroot)) :
+        files = []
+    else:
+        csvdir = list(os.walk(csvroot))[1][0]
+        files = scan_csv(csvdir, csvfile, lab)
+    for fn in files:
         csvfn = os.path.join(csvdir,fn)
         with open(csvfn) as jsonfile:
             pol = np.array(json.load(jsonfile))
@@ -69,27 +73,28 @@ def spark_run():
     sc = SparkContext(conf=conf)
     spark = SparkSession(sc)
 
-    srcdir = '/data/promort/rois.test'
-    slidedir='/data/promort/prom2/slides'
-    maskdir='/data/promort/masks.test' # must have normal and tumor subdirs
-    work = [['NORMAL', 'cores.csv'], ['TUMOR', 'focus_regions.csv']]
+    coredir = '/data/o/svs_review/cores'
+    frdir = '/data/o/svs_review/focus_regions'
+    slidedir='/data/o/slides'
+    maskdir='/data/o/masks' # must have normal and tumor subdirs
+    work = [['NORMAL', 'cores.csv', coredir],
+            ['TUMOR', 'focus_regions.csv', frdir]]
     suf = 'mask'
     
-    dlist = os.scandir(srcdir)
-    basenames = [e.name for e in dlist if e.is_dir()]
-
     # build job list
     job_list = []
+    dlist = os.scandir(coredir)
+    basenames = [e.name for e in dlist if e.is_dir()]
     for basename in basenames:
-        for lab, csvfile in work:
+        for lab, csvfile, srcdir in work:
             slide = os.path.join(slidedir, basename + '.mrxs')
             csvroot = os.path.join(srcdir, basename)
             job_list.append((slide, csvroot, maskdir, basename, lab,
                              suf, csvfile))
+    # run jobs
     procs = sc.defaultParallelism
     rdd = sc.parallelize(job_list, numSlices=procs)
     rdd.foreach(mask_kernel)
-    
     
 # run main
 spark_run()

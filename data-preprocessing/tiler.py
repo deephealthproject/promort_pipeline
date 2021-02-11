@@ -15,7 +15,7 @@ import uuid
 #
 # For testing in ipython:
 # set -x PYSPARK_DRIVER_PYTHON ipython3
-# /spark/bin/spark-submit --conf spark.cores.max=48 --conf spark.default.parallelism=48 --master spark://spark-master:7077
+# /spark/bin/pyspark --conf spark.cores.max=48 --conf spark.default.parallelism=48 --master spark://spark-master:7077
 #
 # If cassandra gets flooded and needs some oxygen:
 # cassandra.yaml: write_request_timeout_in_ms: 30000
@@ -27,10 +27,8 @@ from cassandra.auth import PlainTextAuthProvider
 from cassandra.policies import TokenAwarePolicy, DCAwareRoundRobinPolicy
 from cassandra.cluster import ExecutionProfile
 
-root = '/data/promort/prom2/'
-slide_root = os.path.join(root, 'slides')
-#masks_root = os.path.join(root, 'masks')
-masks_root = '/data/promort/masks.test/'
+slide_root = '/data/o/slides'
+masks_root = '/data/o/masks'
 ext = '.mrxs'
 
 class CassandraWriter():
@@ -80,7 +78,7 @@ class Tiler():
         self.sample_rep = int(srep)
         self.mask_norm_fn = mask_norm_fn
         self.mask_tum_fn = mask_tum_fn
-        self.pyram_lev = 1 # reading patches from this level
+        self.pyram_lev = 0 # reading patches from level 0
         self.patch_x, self.patch_y = (256, 256)
         self.slide = openslide.OpenSlide(self.slide_fn)
     def __del__(self):
@@ -151,13 +149,16 @@ def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
         cw = CassandraWriter(auth_prov, ['cassandra_db'],
-                             'promort.ids_lev1',
-                             'promort.data_lev1')
+                             'promort.ids_0',
+                             'promort.data_0')
         cw.save_items(items)
     return(ret)
     
 def run():
-    cass_pass = getpass('Insert Cassandra password: ')
+    try: 
+        from private_data import cass_pass
+    except ImportError:
+        cass_pass = getpass('Insert Cassandra password: ')
 
     conf = SparkConf()\
         .setAppName("Tiler")\
@@ -166,9 +167,9 @@ def run():
     sc = SparkContext(conf=conf)
     spark = SparkSession(sc)
     
-    parts_0 = 24 #48 # get list of patches
-    parts_1 = 18 #36 # extract patches
-    parts_2 =  9 #18 # write to cassandra
+    parts_0 = 48 # get list of patches
+    parts_1 = 24 # extract patches
+    parts_2 = 12 # write to cassandra
 
     samples = next(os.walk(os.path.join(masks_root,'normal')))[2]
     samples = [s.split('_')[0] for s in samples]
