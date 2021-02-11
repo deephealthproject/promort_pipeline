@@ -35,7 +35,7 @@ def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
         #eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
-        eddl.CS_GPU([1], mem="low_mem") if gpu else eddl.CS_CPU()
+        eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
         )
 
     eddl.summary(net)
@@ -59,7 +59,7 @@ def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
 
     return net, dataset_augs
 
-def check_db_rows_and_split(cd, args, splits=[7,2,1]):
+def check_db_rows_and_split(cd, args, splits=[7,1,2]):
     data_size = args.data_size
     
     if args.db_rows_fn:
@@ -70,12 +70,12 @@ def check_db_rows_and_split(cd, args, splits=[7,2,1]):
             # If rows do not exist, read them from db and save to a pickle
             cd.read_rows_from_db()
             cd.save_rows(args.db_rows_fn)
-            cd.init_datatable(table='promort.data_1')
     else:
         # If a db_rows_fn is not specified just read them from db
         cd.read_rows_from_db()
         
     ## Create the split and save it
+    cd.init_datatable(table='promort.data_osk')
     cd.split_setup(batch_size=args.batch_size, split_ratios=splits,
                                  max_patches=data_size, augs=[])
     cd.save_splits('/tmp/splits.pckl')
@@ -125,7 +125,7 @@ def main(args):
     #cd = CassandraDataset(ap, ['cassandra_db'])
     cd = CassandraDataset(ap, ['127.0.0.1'])
 
-    cd.init_listmanager(meta_table='promort.ids_1', id_col='patch_id',
+    cd.init_listmanager(meta_table='promort.ids_osk', id_col='patch_id',
                         split_ncols=2, num_classes=num_classes, 
                         partition_cols=['sample_name', 'sample_rep', 'label'])
     
