@@ -30,6 +30,7 @@ from cassandra.cluster import ExecutionProfile
 slide_root = '/data/o/slides'
 masks_root = '/data/o/masks'
 ext = '.mrxs'
+pyram_lev = 1
 
 class CassandraWriter():
     def __init__(self, auth_prov, cassandra_ips, table1, table2):
@@ -72,13 +73,13 @@ class CassandraWriter():
         
 class Tiler():
     def __init__(self, sample, slide_fn, mask_norm_fn=None,
-                 mask_tum_fn=None):
+                 mask_tum_fn=None, pyram_lev=0):
         self.slide_fn = slide_fn
         self.sample_name, srep = sample.split('-')
         self.sample_rep = int(srep)
         self.mask_norm_fn = mask_norm_fn
         self.mask_tum_fn = mask_tum_fn
-        self.pyram_lev = 0 # reading patches from level 0
+        self.pyram_lev = pyram_lev # setting level from which patches are read
         self.patch_x, self.patch_y = (256, 256)
         self.slide = openslide.OpenSlide(self.slide_fn)
     def __del__(self):
@@ -125,7 +126,8 @@ def get_job_list(sample):
     slide_fn = os.path.join(slide_root, sample+ext)
     mask_norm_fn = os.path.join(masks_root, 'normal', sample+'_mask.png')
     mask_tum_fn = os.path.join(masks_root, 'tumor', sample+'_mask.png')
-    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn)
+    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn,
+                  pyram_lev=pyram_lev)
     coords = tiler.get_coords()
     def chunks(lst, m):
         n=len(lst)
@@ -142,15 +144,16 @@ def get_tiles(params):
     slide_fn = os.path.join(slide_root, sample+ext)
     mask_norm_fn = os.path.join(masks_root, 'normal', sample+'_mask.png')
     mask_tum_fn = os.path.join(masks_root, 'tumor', sample+'_mask.png')
-    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn)
+    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn,
+                  pyram_lev=pyram_lev)
     return (tiler.get_tiles(coords))
 
 def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
         cw = CassandraWriter(auth_prov, ['cassandra_db'],
-                             'promort.ids_0',
-                             'promort.data_0')
+                             'promort.ids_1',
+                             'promort.data_1')
         cw.save_items(items)
     return(ret)
     
