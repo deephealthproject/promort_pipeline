@@ -82,7 +82,7 @@ def main(args):
     #cd = CassandraDataset(ap, ['cassandra_db'])
     cd = CassandraDataset(ap, ['127.0.0.1'])
 
-    cd.init_listmanager(meta_table='promort.ids_1', id_col='patch_id',
+    cd.init_listmanager(meta_table='promort.ids_osk', id_col='patch_id',
                         split_ncols=2, num_classes=num_classes, 
                         partition_cols=['sample_name', 'sample_rep', 'label'])
     
