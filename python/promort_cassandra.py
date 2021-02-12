@@ -1,5 +1,25 @@
+# Copyright (c) 2020 CRS4
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
 """
-PROMORT example.
+PROMORT training model application.
 """
 
 import argparse
@@ -23,11 +43,17 @@ import pickle
 import models 
 import gc
 
-def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
+def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
     
     ## Network definition
     in_ = eddl.Input([3, in_size[0], in_size[1]])
-    out = models.VGG16_promort(in_, num_classes)
+    
+    if net_name == 'vgg16':
+        out = models.VGG16_promort(in_, num_classes)
+    else:
+        print('model %s not available' % net_name)
+        sys.exit(-1)
+
     net = eddl.Model([in_], [out])
     eddl.build(
         net,
@@ -59,27 +85,6 @@ def get_net(in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
 
     return net, dataset_augs
 
-def check_db_rows_and_split(cd, args, splits=[7,1,2]):
-    data_size = args.data_size
-    
-    if args.db_rows_fn:
-        if Path(args.db_rows_fn).exists():
-            # If rows file exists load them from file 
-            cd.load_rows(args.db_rows_fn)
-        else:
-            # If rows do not exist, read them from db and save to a pickle
-            cd.read_rows_from_db()
-            cd.save_rows(args.db_rows_fn)
-    else:
-        # If a db_rows_fn is not specified just read them from db
-        cd.read_rows_from_db()
-        
-    ## Create the split and save it
-    cd.init_datatable(table='promort.data_osk')
-    cd.split_setup(batch_size=args.batch_size, split_ratios=splits,
-                                 max_patches=data_size, augs=[])
-    cd.save_splits('/tmp/splits.pckl')
-
 
 def main(args):
     net_name = "vgg16"
@@ -87,7 +92,7 @@ def main(args):
     size = [256, 256]  # size of images
     
     ### Get Network
-    net, dataset_augs = get_net(in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpu=args.gpu)
+    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpu=args.gpu)
     out = net.layers[-1]
     
     ## Load weights if requested
@@ -97,7 +102,7 @@ def main(args):
     
     ## Check options
     if args.out_dir:
-        working_dir = "model_cnn_%s_ps.%d_bs_%d_lr_%e" % (net_name, size[0], args.batch_size, args.lr)
+        working_dir = "model_cnn_%s_ps.%d_bs_%d_lr_%.2e" % (net_name, size[0], args.batch_size, args.lr)
         res_dir = os.path.join(args.out_dir, working_dir)
         try:
             os.makedirs(res_dir, exist_ok=True)
@@ -105,14 +110,10 @@ def main(args):
             print ("Directory already exists.")
             sys.exit()
 
-    if args.out_dir and args.save_img:
-        save_img = True
-    else:
-        save_img = False
     
-    #################################
-    ### Set database to read data ###
-    #################################
+    ########################################
+    ### Set database and read split file ###
+    ########################################
 
     if not args.cassandra_pwd_fn:
         cass_pass = getpass('Insert Cassandra password: ')	
@@ -129,19 +130,13 @@ def main(args):
                         split_ncols=2, num_classes=num_classes, 
                         partition_cols=['sample_name', 'sample_rep', 'label'])
     
-    data_size = args.data_size
-    
-    if args.splits_fn:
-        # Check if file exists
-        if Path(args.splits_fn).exists():
-            # Load splits 
-            cd.load_splits(args.splits_fn, batch_size=args.batch_size, augs=dataset_augs)
-        else:
-            check_db_rows_and_split(cd, args)
-            cd.save_splits(args.splits_fn)
-            
+    # Check if file exists
+    if Path(args.splits_fn).exists():
+        # Load splits 
+        cd.load_splits(args.splits_fn, batch_size=args.batch_size, augs=dataset_augs)
     else:
-        check_db_rows_and_split(cd, args)
+        print ("Split file not found")
+        sys.exit(-1)
 
     print ('Number of batches for each split (train, val, test):', cd.num_batches)
 
@@ -155,19 +150,15 @@ def main(args):
 
     print("Starting training", flush=True)
 
-    ### Main loop across epochs
     num_batches_tr = cd.num_batches[0]
     num_batches_val = cd.num_batches[1]
     
-    indices = list(range(args.batch_size))
-
     loss_l = []
     acc_l = []
     val_acc_l = []
     
 
     ### Main loop across epochs
-    
     for e in range(args.epochs):
 
         ### Training 
@@ -193,8 +184,6 @@ def main(args):
             instances = (b_index+1) * args.batch_size
             loss = eddl.get_losses(net)[0]
             metr = eddl.get_metrics(net)[0]
-            #loss = net.fiterr[0]/instances
-            #metr = net.fiterr[1]/instances
             msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, args.epochs, b + 1, num_batches_tr, loss, metr)
             pbar.set_postfix_str(msg)
             total_loss.append(loss)
@@ -204,22 +193,11 @@ def main(args):
         acc_l.append(np.mean(total_metric))
 
         pbar.close()
-        
-        if args.save_weights:
-            print("Saving weights")
-            path = os.path.join(res_dir, "promort_checkpoint_%s.bin" % e)
-            eddl.save(net, path, "bin")
 
         ### Evaluation on validation set batches
         cd.current_split = 1 ## Set validation split as the current one
         total_metric = []
         
-        if save_img:
-            current_path = os.path.join(args.out_dir, "Epoch_%d" % e)
-            for c in range(num_classes):
-                c_dir = os.path.join(current_path, c)
-                os.makedirs(c_dir, exist_ok=True)
-
         print("Epoch %d/%d - Evaluation" % (e + 1, args.epochs), flush=True)
         
         pbar = tqdm(range(num_batches_val))
@@ -239,25 +217,8 @@ def main(args):
                 ca = metric.value(target, result)
                 total_metric.append(ca)
                 sum_ += ca
-                
-                if save_img:
-                    result_a = np.array(result, copy=False)
-                    target_a = np.array(target, copy=False)
-                    classe = np.argmax(result_a).item()
-                    gt_class = np.argmax(target_a).item()
-                    single_image = x.select([str(k)])
-                    img_t = ecvl.TensorToView(single_image)
-                    img_t.colortype_ = ecvl.ColorType.BGR
-                    single_image.mult_(255.)
-                    filename = d.samples_[d.GetSplit()[n]].location_[0]
-                    head, tail = os.path.splitext(os.path.basename(filename))
-                    bname = "%s_gt_class_%s.png" % (head, gt_class)
-                    cur_path = os.path.join(
-                        current_path, classe, bname
-                    )
-                    ecvl.ImWrite(cur_path, img_t)
-                
                 n += 1
+            
             msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - acc: {:.3f} ".format(e + 1, args.epochs, b + 1, num_batches_val, (sum_ / n))
             pbar.set_postfix_str(msg)
              
@@ -265,11 +226,17 @@ def main(args):
         total_avg = np.mean(total_metric)
         val_acc_l.append(total_avg)
 
-        print("Total categorical accuracy: {:.2f}\n".format(total_avg))
+        print("Total categorical accuracy: {:.3f}\n".format(total_avg))
 
-    history = {'loss': loss_l, 'acc': acc_l, 'val_acc': val_acc_l}
-
-    pickle.dump(history, open(os.path.join(res_dir, 'history.pickle'), 'wb'))
+        ## Save weights 
+        if args.save_weights:
+            print("Saving weights")
+            path = os.path.join(res_dir, "promort_%s_weights_ep_%s_vacc_%.2f.bin" % (net_name, e, total_avg))
+            eddl.save(net, path, "bin")
+    
+        # Dump history at the end of each epoch so if the job is interrupted data are not lost.
+        history = {'loss': loss_l, 'acc': acc_l, 'val_acc': val_acc_l}
+        pickle.dump(history, open(os.path.join(res_dir, 'history.pickle'), 'wb'))
 
     
 if __name__ == "__main__":
@@ -281,14 +248,11 @@ if __name__ == "__main__":
     parser.add_argument("--data-size", type=int, metavar="INT", default=1000)
     parser.add_argument("--gpu", action="store_true")
     parser.add_argument("--save-weights", action="store_true")
-    parser.add_argument("--save-img", action="store_true")
     parser.add_argument("--augs-on", action="store_true")
     parser.add_argument("--out-dir", metavar="DIR",
                         help="if set, save images in this directory")
     parser.add_argument("--init-weights-fn", metavar="DIR",
                         help="if set, a new set of weight are loaded to start the training")
-    parser.add_argument("--db-rows-fn", metavar="STR",
-                        help="if set, load db rows from a pickle file if it exists or save rows to a pickle after reading image metadata from db")
     parser.add_argument("--splits-fn", metavar="STR",
                         help="if set, load splits data from a pickle file if it exists or save splits data to a pickle")
     parser.add_argument("--cassandra-pwd-fn", metavar="STR",
