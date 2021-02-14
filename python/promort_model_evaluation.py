@@ -135,13 +135,13 @@ def main(args):
             total_metric.append(ca)
             sum_ += ca
             
-            p_id = ids[k]
+            p_id = str(ids[k]['patch_id'])
             result_np = result.getdata()[0]
             gt_np = target.getdata()[0]
-            normal_p = result_np[0]
-            tumor_p = result_np[1]
-            normal_gt = gt_np[0]
-            tumor_gt = gt_np[1]
+            normal_p = result_np[1]
+            tumor_p = result_np[0]
+            normal_gt = gt_np[1]
+            tumor_gt = gt_np[0]
 
             fd.write('%s,%.2f,%.2f,%.2f,%.2f\n' % (p_id, normal_p, tumor_p, normal_gt, tumor_gt))
 
