@@ -87,7 +87,7 @@ def test_dataset():
 
     # Flow 0: read rows from db, create splits and save everything
     cd.init_listmanager(meta_table='promort.ids_1', id_col='patch_id',
-                        split_ncols=2, num_classes=2, 
+                        split_ncols=1, num_classes=2, 
                         partition_cols=['sample_name', 'sample_rep', 'label'])
     cd.read_rows_from_db()
     cd.save_rows('/tmp/rows.pckl')
