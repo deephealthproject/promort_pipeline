@@ -21,7 +21,7 @@
 import pyeddl.eddl as eddl
 
 
-def VGG16_promort(in_layer, num_classes, seed=1234, init=eddl.HeNormal):
+def VGG16_promort(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
     x = in_layer
     x = eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed)), [2, 2], [2, 2])
@@ -37,7 +37,12 @@ def VGG16_promort(in_layer, num_classes, seed=1234, init=eddl.HeNormal):
     x = eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed)), [2, 2], [2, 2])
     x = eddl.Reshape(x, [-1])
-    x = eddl.ReLu(init(eddl.Dense(x, 256), seed))
+    x = eddl.Dense(x, 256)
+    if dropout:
+        x = eddl.Dropout(x, dropout)
+    if l2_reg:
+        x = eddl.L2(x, l2_reg)
+    x = eddl.ReLu(init(x,seed))
     x = eddl.Softmax(eddl.Dense(x, num_classes))
     return x
 

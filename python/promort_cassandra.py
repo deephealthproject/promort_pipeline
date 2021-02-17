@@ -43,13 +43,13 @@ import pickle
 import models 
 import gc
 
-def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True):
+def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True, init=eddl.HeNormal, dropout=None, l2_reg=None):
     
     ## Network definition
     in_ = eddl.Input([3, in_size[0], in_size[1]])
     
     if net_name == 'vgg16':
-        out = models.VGG16_promort(in_, num_classes)
+        out = models.VGG16_promort(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
     else:
         print('model %s not available' % net_name)
         sys.exit(-1)
@@ -92,7 +92,8 @@ def main(args):
     size = [256, 256]  # size of images
     
     ### Get Network
-    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpu=args.gpu)
+    net_init = eddl.HeNormal
+    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpu=args.gpu, init=net_init, dropout=args.dropout, l2_reg=args.l2_reg)
     out = net.layers[-1]
     
     ## Load weights if requested
@@ -126,10 +127,6 @@ def main(args):
     #cd = CassandraDataset(ap, ['cassandra_db'])
     cd = CassandraDataset(ap, ['127.0.0.1'])
 
-    cd.init_listmanager(meta_table='promort.ids_osk', id_col='patch_id',
-                        split_ncols=2, num_classes=num_classes, 
-                        partition_cols=['sample_name', 'sample_rep', 'label'])
-    
     # Check if file exists
     if Path(args.splits_fn).exists():
         # Load splits 
@@ -155,11 +152,21 @@ def main(args):
     
     loss_l = []
     acc_l = []
+    val_loss_l = []
     val_acc_l = []
     
 
+    #### Code used to find best learning rate. Comment it to perform an actual training
+    #max_epochs = args.epochs
+    #lr_start = 1e-6
+    #lr_end = 1e-2
+    #lr_f = lambda x: 10**(np.log10(lr_start) + ((np.log10(lr_end)-np.log10(lr_start))/max_epochs)*x)
+    ####
+
     ### Main loop across epochs
     for e in range(args.epochs):
+        ## SET LT
+        #eddl.setlr(net, [lr_f(e)])
 
         ### Training 
         cd.current_split = 0 ## Set the training split as the current one
@@ -188,7 +195,7 @@ def main(args):
             pbar.set_postfix_str(msg)
             total_loss.append(loss)
             total_metric.append(metr)
-
+    
         loss_l.append(np.mean(total_loss))
         acc_l.append(np.mean(total_metric))
 
@@ -197,6 +204,7 @@ def main(args):
         ### Evaluation on validation set batches
         cd.current_split = 1 ## Set validation split as the current one
         total_metric = []
+        batch_loss = []
         
         print("Epoch %d/%d - Evaluation" % (e + 1, args.epochs), flush=True)
         
@@ -210,7 +218,10 @@ def main(args):
             output = eddl.getOutput(out)
 
             sum_ = 0.0
-         
+            net.compute_loss()
+            loss = eddl.get_losses(net)[0]
+            batch_loss.append(loss)
+
             for k in range(x.getShape()[0]):
                 result = output.select([str(k)])
                 target = y.select([str(k)])
@@ -219,24 +230,27 @@ def main(args):
                 sum_ += ca
                 n += 1
             
-            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - acc: {:.3f} ".format(e + 1, args.epochs, b + 1, num_batches_val, (sum_ / n))
+            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) loss: {:.3f}, acc: {:.3f} ".format(e + 1, args.epochs, b + 1, num_batches_val, loss, (sum_ / n))
             pbar.set_postfix_str(msg)
              
         pbar.close()
-        total_avg = np.mean(total_metric)
-        val_acc_l.append(total_avg)
+        val_batch_acc_avg = np.mean(total_metric)
+        val_batch_loss_avg = np.mean(batch_loss)
+        val_loss_l.append(val_batch_loss_avg)
+        val_acc_l.append(val_batch_acc_avg)
 
-        print("Total categorical accuracy: {:.3f}\n".format(total_avg))
+        print("loss: {:.3f}, acc: {:.3f}, val_loss: {:.3f}, val_acc: {:.3f}\n".format(loss_l[-1], acc_l[-1], val_loss_l[-1], val_acc_l[-1]))
 
         ## Save weights 
         if args.save_weights:
             print("Saving weights")
-            path = os.path.join(res_dir, "promort_%s_weights_ep_%s_vacc_%.2f.bin" % (net_name, e, total_avg))
+            path = os.path.join(res_dir, "promort_%s_weights_ep_%s_vacc_%.2f.bin" % (net_name, e, val_acc_l[-1]))
             eddl.save(net, path, "bin")
     
         # Dump history at the end of each epoch so if the job is interrupted data are not lost.
-        history = {'loss': loss_l, 'acc': acc_l, 'val_acc': val_acc_l}
-        pickle.dump(history, open(os.path.join(res_dir, 'history.pickle'), 'wb'))
+        if args.out_dir:
+            history = {'loss': loss_l, 'acc': acc_l, 'val_loss': val_loss_l, 'val_acc': val_acc_l}
+            pickle.dump(history, open(os.path.join(res_dir, 'history.pickle'), 'wb'))
 
     
 if __name__ == "__main__":
@@ -245,7 +259,8 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, metavar="INT", default=50)
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32)
     parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5)
-    parser.add_argument("--data-size", type=int, metavar="INT", default=1000)
+    parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None)
+    parser.add_argument("--l2_reg", type=float, metavar="FLOAT", default=None)
     parser.add_argument("--gpu", action="store_true")
     parser.add_argument("--save-weights", action="store_true")
     parser.add_argument("--augs-on", action="store_true")
