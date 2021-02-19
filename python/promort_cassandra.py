@@ -43,7 +43,7 @@ import pickle
 import models 
 import gc
 
-def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpu=True, init=eddl.HeNormal, dropout=None, l2_reg=None):
+def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpus=[1], init=eddl.HeNormal, dropout=None, l2_reg=None):
     
     ## Network definition
     in_ = eddl.Input([3, in_size[0], in_size[1]])
@@ -61,7 +61,7 @@ def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=Fa
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
         #eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
-        eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
+        eddl.CS_GPU(gpus, mem="low_mem") if gpus else eddl.CS_CPU()
         )
 
     eddl.summary(net)
@@ -91,9 +91,16 @@ def main(args):
     num_classes = 2
     size = [256, 256]  # size of images
     
+    ### Parse GPU
+    if args.gpu:
+        gpus = [int(i) for i in args.gpu]
+    else:
+        gpus = []
+
+    print ('GPUs mask: %r' % gpus)
     ### Get Network
     net_init = eddl.HeNormal
-    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpu=args.gpu, init=net_init, dropout=args.dropout, l2_reg=args.l2_reg)
+    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpus=gpus, init=net_init, dropout=args.dropout, l2_reg=args.l2_reg)
     out = net.layers[-1]
     
     ## Load weights if requested
@@ -155,6 +162,8 @@ def main(args):
     val_loss_l = []
     val_acc_l = []
     
+    patience_cnt = 0
+    val_acc_max = 0.0
 
     #### Code used to find best learning rate. Comment it to perform an actual training
     #max_epochs = args.epochs
@@ -238,7 +247,7 @@ def main(args):
         val_batch_loss_avg = np.mean(batch_loss)
         val_loss_l.append(val_batch_loss_avg)
         val_acc_l.append(val_batch_acc_avg)
-
+    
         print("loss: {:.3f}, acc: {:.3f}, val_loss: {:.3f}, val_acc: {:.3f}\n".format(loss_l[-1], acc_l[-1], val_loss_l[-1], val_acc_l[-1]))
 
         ## Save weights 
@@ -251,25 +260,36 @@ def main(args):
         if args.out_dir:
             history = {'loss': loss_l, 'acc': acc_l, 'val_loss': val_loss_l, 'val_acc': val_acc_l}
             pickle.dump(history, open(os.path.join(res_dir, 'history.pickle'), 'wb'))
+        
+        ### Patience check
+        if val_acc_l[-1] > val_acc_max:
+            val_acc_max = val_acc_l[-1]
+            patience_cnt = 0
+        else:
+            patience_cnt += 1
 
-    
+        if patience_cnt > args.patience:
+            ## Exit and complete the training
+            print ("Got maximum patience... training completed")
+            break
+        
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--yaml_fn", default=None)
-    parser.add_argument("--epochs", type=int, metavar="INT", default=50)
-    parser.add_argument("--batch-size", type=int, metavar="INT", default=32)
-    parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5)
-    parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None)
-    parser.add_argument("--l2_reg", type=float, metavar="FLOAT", default=None)
-    parser.add_argument("--gpu", action="store_true")
-    parser.add_argument("--save-weights", action="store_true")
-    parser.add_argument("--augs-on", action="store_true")
+    parser.add_argument("--epochs", type=int, metavar="INT", default=50, help='Number of epochs')
+    parser.add_argument("--patience", type=int, metavar="INT", default=20, help='Number of epochs after which the training is stopped if validation accuracy does not improve (delta=0.001)')
+    parser.add_argument("--batch-size", type=int, metavar="INT", default=32, help='Batch size')
+    parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5, help='Learning rate')
+    parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None, help='Float value (0-1) to specify the dropout ratio' )
+    parser.add_argument("--l2_reg", type=float, metavar="FLOAT", default=None, help='L2 regularization parameter')
+    parser.add_argument("--gpu", nargs='+', default = [], help='Specify GPU mask. For example: 1 to use only gpu0; 1,1 to use gpus 0 and 1; 1,1,1,1 to use gpus 0,1,2,3')
+    parser.add_argument("--save-weights", action="store_true", help='Network parameters are saved after each epoch')
+    parser.add_argument("--augs-on", action="store_true", help='Activate data augmentations')
     parser.add_argument("--out-dir", metavar="DIR",
-                        help="if set, save images in this directory")
+                        help="Specifies the output directory. If not set no output data is saved")
     parser.add_argument("--init-weights-fn", metavar="DIR",
-                        help="if set, a new set of weight are loaded to start the training")
-    parser.add_argument("--splits-fn", metavar="STR",
-                        help="if set, load splits data from a pickle file if it exists or save splits data to a pickle")
+                        help="Filename of the .bin file with initial parameters of the network")
+    parser.add_argument("--splits-fn", metavar="STR", required=True,
+                        help="Pickle file with cassandra splits")
     parser.add_argument("--cassandra-pwd-fn", metavar="STR",
                         help="cassandra password")
     main(parser.parse_args())
