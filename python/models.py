@@ -39,7 +39,7 @@ def VGG16_promort(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=N
     x = eddl.Reshape(x, [-1])
     x = eddl.Dense(x, 256)
     if dropout:
-        x = eddl.Dropout(x, dropout)
+        x = eddl.Dropout(x, dropout, iw=False)
     if l2_reg:
         x = eddl.L2(x, l2_reg)
     x = eddl.ReLu(init(x,seed))
