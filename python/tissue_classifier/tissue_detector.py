@@ -48,7 +48,7 @@ class tissue_detector:
         if model_fn:
             self.load_model(model_fn)
     
-    def __get_binary_mask(self, prob_T_l, s, th):
+    def __get_binary_mask(self, prob_T_l, th):
         """
         @prob_T_L: list of probability tensors resulting from model predictions.
                   Once each tensor is binarized, a single array is created stacking them
@@ -62,13 +62,9 @@ class tissue_detector:
             output_np = prob_T.getdata()
             pred_np = np.zeros(output_np.shape[0])
             pred_np[output_np[:, 1]>th] = 1
-            mask_values = pred_np
-            mask_np_l.append(mask_values)
+            mask_np_l.append(pred_np.astype(np.uint8))
 
-        mask_values = np.vstack(mask_np_l)
-        mask = mask_values.reshape((s[0], s[1]))
-
-        return mask
+        return mask_np_l
 
     def load_model(self, model_weights):
         ## Load the ANN tissue detector model implemented by using pyeddl
@@ -87,7 +83,7 @@ class tissue_detector:
         
         self.model = net
     
-    def get_tissue_mask(self, np_img, channel_first=True, BGR=False):
+    def get_tissue_mask(self, np_img, channel_first=True, BGR=False, get_prob=False):
         """
         @np_img: numpy array of a PIL image (x,y,4) if alpha channel is present 
                  or (x, y, 3) if alpha channel not present
@@ -115,9 +111,16 @@ class tissue_detector:
         t_eval = Tensor.fromarray(np_img)
 
         output_l = eddl.predict(self.model, [t_eval]) # Prediction.. get probabilities
-        msk_pred = self.__get_binary_mask(output_l, s, self.th) ## Get the actual mask (binarization)
+       
+        if get_prob:
+            output_np_l = [i.getdata()[:,1] for i in output_l] ## Create a list  f numpy array from output tensors
+        else:
+            output_np_l = self.__get_binary_mask(output_l, self.th) ## Get the actual mask (binarization)
 
-        return msk_pred
+        mask_values = np.vstack(output_np_l)
+        mask = mask_values.reshape((s[0], s[1]))
+
+        return mask
 
     def get_mask_tissue_from_slide(self, slide_fn, level=2, use_openslide=False):
         
