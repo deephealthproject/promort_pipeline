@@ -39,20 +39,41 @@ class PagedResultHandler():
 
 # Handler for batch of patches
 class BatchPatchHandler():
-    def __init__(self, num_classes, aug, label_col, data_col):
+    def __init__(self, num_classes, aug, table, label_col, data_col,
+                 id_col, username, cass_pass, cassandra_ips):
         self.aug = aug
         self.num_classes = num_classes
         self.label_col = label_col
         self.data_col = data_col
+        self.id_col = id_col
         self.finished_event = threading.Event()
         self.lock = threading.Lock()
         self.tot = None
         self.cow = 0
+        self.onair = 0
         self.errors = []
         self.feats = []
         self.labels = []
         self.perm = []
         self.bb = None
+        ## cassandra parameters
+        prof_dict = ExecutionProfile(
+            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
+            row_factory = cassandra.query.dict_factory)
+        profs = {'dict': prof_dict}
+        auth_prov = PlainTextAuthProvider(username=username, password=cass_pass)
+        self.cluster = Cluster(cassandra_ips,
+                               execution_profiles=profs,
+                               protocol_version=4,
+                               auth_provider=auth_prov)
+        self.cluster.connect_timeout = 10 #seconds
+        self.sess = self.cluster.connect()
+        self.table = table
+        query = f"SELECT {self.label_col}, {self.data_col} \
+        FROM {self.table} WHERE {self.id_col}=?"
+        self.prep = self.sess.prepare(query)
+    def __del__(self):
+        self.cluster.shutdown()
     def reset(self, tot):
         self.tot = tot
         self.cow = 0
@@ -62,6 +83,19 @@ class BatchPatchHandler():
         self.perm = []
         self.bb = None
         self.finished_event.clear()
+    def schedule_batch(self, keys_):
+        kk = list(enumerate(keys_))
+        cass_par = min(32, self.tot) # concurrent queries to Cassandra server
+        while (len(kk)>0):
+            with self.lock:
+                if (self.onair<cass_par):
+                    idx, keys = kk.pop(0)
+                    future = self.sess.execute_async(self.prep, keys,
+                                                     execution_profile='dict')
+                    self.onair += 1
+                    self.add_future(future, idx)
+            # sleep 0.1 ms
+            time.sleep(.0001)
     def add_future(self, future, idx):
         future.add_callbacks(
             callback=self.handle_res(idx),
@@ -95,6 +129,7 @@ class BatchPatchHandler():
                 self.labels.append(lab)
                 self.perm.append(idx)
                 self.cow += 1
+                self.onair -= 1
                 if(self.cow==self.tot): # last patch
                     # recover original order of images
                     sh = []
@@ -110,13 +145,20 @@ class BatchPatchHandler():
     def handle_error(self, exc):
         self.errors.append(exc)
         self.finished_event.set()
+    def block_get_batch(self):
+        self.finished_event.wait() # wait for data to be ready
+        if (len(self.errors)>0): # if errors raise exception
+            raise self.errors[0]
+        return(self.bb)
 
 class CassandraListManager():
-    def __init__(self, sess, table, partition_cols, id_col,
-                 split_ncols=1, num_classes=2, seed=None):
+    def __init__(self, auth_prov, cassandra_ips, table,
+                 partition_cols, id_col, split_ncols=1, num_classes=2,
+                 seed=None):
         """Loads the list of patches from Cassandra DB
 
-        :param sess: Cassandra session
+        :param auth_prov: Authenticator for Cassandra
+        :param cassandra_ips: List of Cassandra ip's
         :param table: Matadata table with ids
         :param partition_cols: Cassandra partition key (e.g., ['name', 'label'])
         :param id_col: Cassandra id column for the images (e.g., 'patch_id')
@@ -129,8 +171,21 @@ class CassandraListManager():
         """
         random.seed(seed)
         np.random.seed(seed)
-        ## cassandra variables
-        self.sess = sess
+        ## cassandra parameters
+        prof_dict = ExecutionProfile(
+            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
+            row_factory = cassandra.query.dict_factory)
+        prof_tuple = ExecutionProfile(
+            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
+            row_factory = cassandra.query.tuple_factory
+        )
+        profs = {'dict': prof_dict, 'tuple': prof_tuple}
+        self.cluster = Cluster(cassandra_ips,
+                               execution_profiles=profs,
+                               protocol_version=4,
+                               auth_provider=auth_prov)
+        self.cluster.connect_timeout = 10 #seconds
+        self.sess = self.cluster.connect()
         self.table = table
         # row variables
         self.partition_cols = partition_cols
@@ -152,6 +207,8 @@ class CassandraListManager():
         self.balance = None
         self.split_ratios = None
         self.num_splits = None
+    def __del__(self):
+        self.cluster.shutdown()
     def read_rows_from_db(self, scan_par=1, sample_whitelist=None):
         self.partitions = self.sess.execute(f"SELECT DISTINCT \
         {', '.join(self.partition_cols)} FROM {self.table} ;",
@@ -197,8 +254,8 @@ class CassandraListManager():
                     futures.remove(future)
                     pbar.update(1)
                     pbar.set_postfix_str(f'added {len(res):5} patches')
-            # sleep 10 ms
-            time.sleep(.01)
+            # sleep 1 ms
+            time.sleep(.001)
         pbar.close()
         self._after_rows()
     def _after_rows(self):
@@ -357,27 +414,14 @@ class CassandraDataset():
         self.seed = seed
         print(f'Seed used by random generators: {seed}')
         ## cassandra parameters
-        prof_dict = ExecutionProfile(
-            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
-            row_factory = cassandra.query.dict_factory)
-        prof_tuple = ExecutionProfile(
-            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
-            row_factory = cassandra.query.tuple_factory
-        )
-        profs = {'dict': prof_dict, 'tuple': prof_tuple}
-        self.cluster = Cluster(cassandra_ips,
-                               execution_profiles=profs,
-                               protocol_version=4,
-                               auth_provider=auth_prov)
-        self.cluster.connect_timeout = 10 #seconds
-        self.sess = self.cluster.connect()
+        self.cassandra_ips = cassandra_ips
+        self.auth_prov = auth_prov
         # query variables
         self.table = None
         self.id_col = None
         self.label_col = None
         self.data_col = None
         self.num_classes = None
-        query = None
         self.prep = None
         ## internal parameters
         self.row_keys = None
@@ -392,8 +436,6 @@ class CassandraDataset():
         self.split = None
         self.num_splits = None
         self._clm = None # Cassandra list manager
-    def __del__(self):
-        self.cluster.shutdown()
     def init_listmanager(self, meta_table, partition_cols, id_col,
                          split_ncols=1, num_classes=2):
         """Initialize the Cassandra list manager.
@@ -412,12 +454,14 @@ class CassandraDataset():
         """
         self.id_col = id_col
         self.num_classes = num_classes
-        self._clm = CassandraListManager(self.sess, table=meta_table,
-                                        partition_cols=partition_cols,
-                                        id_col=self.id_col,
-                                        split_ncols=split_ncols,
-                                        num_classes=self.num_classes,
-                                        seed=self.seed)
+        self._clm = CassandraListManager(auth_prov=self.auth_prov,
+                                         cassandra_ips=self.cassandra_ips,
+                                         table=meta_table,
+                                         partition_cols=partition_cols,
+                                         id_col=self.id_col,
+                                         split_ncols=split_ncols,
+                                         num_classes=self.num_classes,
+                                         seed=self.seed)
     def init_datatable(self, table, label_col='label', data_col='data'):
         """Setup queries for db table containing raw data
 
@@ -431,9 +475,9 @@ class CassandraDataset():
         self.table = table
         self.label_col = label_col
         self.data_col = data_col
-        query = f"SELECT {self.label_col}, {self.data_col} \
-        FROM {self.table} WHERE {self.id_col}=?"
-        self.prep = self.sess.prepare(query)
+        # if splits are set up, then recreate batch handlers
+        if (cd.split):
+            self._reset_indexes()
     def save_rows(self, filename):
         """Save full list of DB rows to file
 
@@ -572,9 +616,15 @@ class CassandraDataset():
                 aug = self.augs[cs]
             else:
                 aug = None
+            ap = self.auth_prov
             handler = BatchPatchHandler(num_classes=self.num_classes,
-                                        aug=aug, label_col=self.label_col,
-                                        data_col=self.data_col)
+                                        label_col=self.label_col,
+                                        data_col=self.data_col,
+                                        id_col=self.id_col,
+                                        table=self.table, aug=aug,
+                                        username=ap.username,
+                                        cass_pass=ap.password,
+                                        cassandra_ips=self.cassandra_ips)
             self.batch_handler.append(handler)
             self.num_batches.append(len(self.split[cs]+self.batch_size-1)
                                     // self.batch_size)
@@ -620,16 +670,10 @@ class CassandraDataset():
         handler = self.batch_handler[cs]
         handler.reset(tot=len(rows))
         keys_ = [row.values() for row in rows]
-        for idx, keys in enumerate(keys_):
-            future = self.sess.execute_async(self.prep, keys,
-                                             execution_profile='dict')
-            handler.add_future(future, idx)
+        handler.schedule_batch(keys_)
     def _compute_batch(self, cs):
         hand = self.batch_handler[cs]
-        hand.finished_event.wait() # wait for data to be ready
-        if (len(hand.errors)>0): # if errors raise exception
-            raise hand.errors[0]
-        return (self.batch_handler[cs].bb)
+        return(hand.block_get_batch())
     def _preload_batch(self, cs):
         if (self.current_index[cs]>=self.split[cs].shape[0]):
             self.current_index[cs]+=1 # register overflow
