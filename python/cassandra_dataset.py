@@ -476,7 +476,7 @@ class CassandraDataset():
         self.label_col = label_col
         self.data_col = data_col
         # if splits are set up, then recreate batch handlers
-        if (cd.split):
+        if (self.split):
             self._reset_indexes()
     def save_rows(self, filename):
         """Save full list of DB rows to file
