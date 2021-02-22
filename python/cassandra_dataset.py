@@ -552,7 +552,7 @@ class CassandraDataset():
         (clm_table, clm_partition_cols,
          clm_split_ncols, self.id_col, self.num_classes,
          table, label_col, data_col,
-         self.row_keys, self.split) = stuff
+         self.row_keys, split) = stuff
             
         # recreate listmanager
         self.init_listmanager(meta_table=clm_table,
@@ -562,6 +562,7 @@ class CassandraDataset():
         # init data table
         self.init_datatable(table=table, label_col=label_col, data_col=data_col)
         # reload splits
+        self.split = split
         self.n = self.row_keys.shape[0] # set size
         num_splits = len(self.split)
         self._update_split_params(num_splits=num_splits, augs=augs,
