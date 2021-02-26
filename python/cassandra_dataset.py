@@ -420,6 +420,7 @@ class CassandraDataset():
         self.auth_prov = auth_prov
         # query variables
         self.table = None
+        self.metatable = None
         self.id_col = None
         self.label_col = None
         self.data_col = None
@@ -438,14 +439,15 @@ class CassandraDataset():
         self.split = None
         self.num_splits = None
         self._clm = None # Cassandra list manager
-    def init_listmanager(self, meta_table, partition_cols, id_col,
-                         split_ncols=1, num_classes=2):
+    def init_listmanager(self, table, partition_cols, id_col,
+                         split_ncols=1, num_classes=2, metatable=None):
         """Initialize the Cassandra list manager.
 
         It takes care of loading/saving the full list of rows from the
         DB and creating the splits according to the user input.
 
-        :param meta_table: Metadata table with ids
+        :param table: Metadata by natural keys
+        :param metatable: Metadata by uuid patch_id (optional)
         :param partition_cols: Cassandra partition key (e.g., ['name', 'label'])
         :param id_col: Cassandra id column for the images (e.g., 'patch_id')
         :param split_ncols: How many columns of the partition key are to be considered when splitting data (default: 1)
@@ -456,9 +458,10 @@ class CassandraDataset():
         """
         self.id_col = id_col
         self.num_classes = num_classes
+        self.metatable = metatable
         self._clm = CassandraListManager(auth_prov=self.auth_prov,
                                          cassandra_ips=self.cassandra_ips,
-                                         table=meta_table,
+                                         table=table,
                                          partition_cols=partition_cols,
                                          id_col=self.id_col,
                                          split_ncols=split_ncols,
@@ -490,7 +493,7 @@ class CassandraDataset():
         """
         stuff = (self._clm.table, self._clm.partition_cols,
                  self._clm.split_ncols, self.id_col, self.num_classes,
-                 self._clm._rows)
+                 self._clm._rows, self.metatable)
 
         with open(filename, "wb") as f:
             pickle.dump(stuff, f)
@@ -507,9 +510,9 @@ class CassandraDataset():
             stuff = pickle.load(f)
 
         (clm_table, clm_partition_cols, clm_split_ncols, self.id_col,
-         self.num_classes, clm_rows) = stuff
+         self.num_classes, clm_rows, metatable) = stuff
  
-        self.init_listmanager(meta_table=clm_table,
+        self.init_listmanager(table=clm_table, metatable=metatable,
                               partition_cols=clm_partition_cols,
                               split_ncols=clm_split_ncols, id_col=self.id_col,
                               num_classes=self.num_classes)
@@ -534,7 +537,7 @@ class CassandraDataset():
         stuff = (self._clm.table, self._clm.partition_cols,
                  self._clm.split_ncols, self.id_col, self.num_classes,
                  self.table, self.label_col, self.data_col,
-                 self.row_keys, self.split)
+                 self.row_keys, self.split, self.metatable)
         with open(filename, "wb") as f:
             pickle.dump(stuff, f)
     def load_splits(self, filename, batch_size=None, augs=None):
@@ -554,10 +557,10 @@ class CassandraDataset():
         (clm_table, clm_partition_cols,
          clm_split_ncols, self.id_col, self.num_classes,
          table, label_col, data_col,
-         self.row_keys, split) = stuff
+         self.row_keys, split, metatable) = stuff
             
         # recreate listmanager
-        self.init_listmanager(meta_table=clm_table,
+        self.init_listmanager(table=clm_table, metatable=metatable,
                               partition_cols=clm_partition_cols,
                               split_ncols=clm_split_ncols, id_col=self.id_col,
                               num_classes=self.num_classes)
