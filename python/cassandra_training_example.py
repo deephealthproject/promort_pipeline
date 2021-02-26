@@ -86,25 +86,27 @@ def test_dataset():
     cd = CassandraDataset(ap, ['cassandra_db'])
 
     # Flow 0: read rows from db, create splits and save everything
-    cd.init_listmanager(meta_table='promort.ids_1', id_col='patch_id',
-                        split_ncols=1, num_classes=2, 
+    # Level 0
+    cd.init_listmanager(table='promort.ids_osk_0', id_col='patch_id',
+                        split_ncols=1, num_classes=2,
+                        metatable='promort.metadata_osk_0',
                         partition_cols=['sample_name', 'sample_rep', 'label'])
     cd.read_rows_from_db()
-    cd.save_rows('/tmp/rows.pckl')
-    cd.init_datatable(table='promort.data_1')
+    cd.save_rows('/tmp/osk_0_rows.pckl')
+    cd.init_datatable(table='promort.data_osk_0')
     cd.split_setup(batch_size=32, split_ratios=[7,2,1],
-                   max_patches=100000, augs=[])
-    cd.save_splits('/tmp/splits.pckl')
+                   max_patches=120000, augs=[])
+    cd.save_splits('/tmp/osk_0_splits.pckl')
 
     ## Flow 1: read saved rows, create and save splits
     #cd.load_rows('/tmp/rows.pckl')
-    #cd.init_datatable(table='promort.data_1')
+    #cd.init_datatable(table='promort.data_osk_0')
     #cd.split_setup(batch_size=32, split_ratios=[7,2,1],
-    #               max_patches=100000, augs=[])
-    #cd.save_splits('/tmp/splits.pckl')
+    #               max_patches=120000, augs=[])
+    #cd.save_splits('/tmp/osk_0_splits.pckl')
 
     ## Flow 2: read saved splits
-    #cd.load_splits('/tmp/splits.pckl', batch_size=32, augs=[])
+    #cd.load_splits('/tmp/osk_0_splits.pckl', batch_size=32, augs=[])
     
     
     ## fit generator
