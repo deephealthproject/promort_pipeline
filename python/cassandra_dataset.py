@@ -90,7 +90,7 @@ class BatchPatchHandler():
             with self.lock:
                 if (self.onair<cass_par):
                     idx, keys = kk.pop(0)
-                    future = self.sess.execute_async(self.prep, keys,
+                    future = self.sess.execute_async(self.prep, [keys],
                                                      execution_profile='dict')
                     self.onair += 1
                     self.add_future(future, idx)
@@ -672,7 +672,7 @@ class CassandraDataset():
         # get and convert whole batch asynchronously
         handler = self.batch_handler[cs]
         handler.reset(tot=len(rows))
-        keys_ = [row.values() for row in rows]
+        keys_ = [list(row.values())[0] for row in rows]
         handler.schedule_batch(keys_)
     def _compute_batch(self, cs):
         hand = self.batch_handler[cs]
