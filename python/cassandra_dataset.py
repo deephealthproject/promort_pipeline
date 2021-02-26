@@ -321,7 +321,9 @@ class CassandraListManager():
         stop_at = self.split_ratios.reshape((-1,1)) * tots
         stop_at[0] = tots # put all scraps in training
         # insert patches into bags until they're full
-        bags = [[]]*self.num_splits # bag-0, bag-1, etc.
+        bags = [] # bag-0, bag-1, etc.
+        for i in range(self.num_splits):
+            bags.append([])
         cows = np.zeros([self.num_splits, self.num_classes])
         curr = 0 # current bag
         for (i, p_num) in enumerate(self._stats):
