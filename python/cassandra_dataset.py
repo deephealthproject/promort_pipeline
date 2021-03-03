@@ -106,6 +106,7 @@ class BatchPatchHandler():
         # convert to bits
         lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
         lab = lab[-self.num_classes:] # take last num_classes bits
+        lab = np.flip(lab) # reverse order
         # read image
         raw_img = item[self.data_col]
         in_stream = io.BytesIO(raw_img)
@@ -249,7 +250,6 @@ class CassandraListManager():
                     if handler.error:
                         raise handler.error
                     res = handler.all_rows
-                    random.shuffle(res)
                     self._rows[sn][l] += res
                     futures.remove(future)
                     pbar.update(1)
@@ -257,6 +257,11 @@ class CassandraListManager():
             # sleep 1 ms
             time.sleep(.001)
         pbar.close()
+        # shuffle all ids in sample bags
+        for ks in self._rows.keys():
+            for lab in self._rows[ks]:
+                random.shuffle(self._rows[ks][lab])
+        # save some statistics
         self._after_rows()
     def _after_rows(self):
         # set sample names
@@ -550,6 +555,8 @@ class CassandraDataset():
         :rtype: 
 
         """
+        self.split = None
+        
         print('Loading splits...')
         with open(filename, "rb") as f:
             stuff = pickle.load(f)
@@ -558,7 +565,7 @@ class CassandraDataset():
          clm_split_ncols, self.id_col, self.num_classes,
          table, label_col, data_col,
          self.row_keys, split, metatable) = stuff
-            
+
         # recreate listmanager
         self.init_listmanager(table=clm_table, metatable=metatable,
                               partition_cols=clm_partition_cols,
@@ -612,6 +619,11 @@ class CassandraDataset():
                                   batch_size=batch_size)
         self._reset_indexes()
     def _reset_indexes(self):
+         # wait for handlers to finish, if running
+        if (self.batch_handler):
+            for cs in range(self.num_splits):
+                self._compute_batch(cs)
+                            
         self.current_index = []
         self.batch_handler = []
         self.num_batches = []
