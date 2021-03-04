@@ -9,9 +9,10 @@ import openslide
 from PIL import Image
 import numpy as np
 import uuid
+from tissue_detector import tissue_detector as td
 
 # Run with
-# /spark/bin/spark-submit --conf spark.cores.max=48 --conf spark.default.parallelism=48 tiler.py
+# /spark/bin/spark-submit --conf spark.cores.max=48 --conf spark.default.parallelism=48 --py-files tissue_detector.py,LSVM_tissue_bg_model_promort.pickle tiler.py
 #
 # For testing in ipython:
 # set -x PYSPARK_DRIVER_PYTHON ipython3
@@ -30,7 +31,7 @@ from cassandra.cluster import ExecutionProfile
 slide_root = '/data/o/slides'
 masks_root = '/data/o/masks'
 ext = '.mrxs'
-pyram_lev = 1
+pyram_lev = 2
 
 class CassandraWriter():
     def __init__(self, auth_prov, cassandra_ips, table1, table2, table3):
@@ -43,9 +44,9 @@ class CassandraWriter():
                                protocol_version=4,
                                auth_provider=auth_prov)
         self.sess = self.cluster.connect()
-        query1 = f"INSERT INTO {table1} (sample_name, sample_rep, x, y, label, patch_id) VALUES (?,?,?,?,?,?)"
+        query1 = f"INSERT INTO {table1} (sample_name, sample_rep, x, y, label, tissue, patch_id) VALUES (?,?,?,?,?,?,?)"
         query2 = f"INSERT INTO {table2} (patch_id, label, data) VALUES (?,?,?)"
-        query3 = f"INSERT INTO {table3} (sample_name, sample_rep, x, y, label, patch_id) VALUES (?,?,?,?,?,?)"
+        query3 = f"INSERT INTO {table3} (sample_name, sample_rep, x, y, label, tissue, patch_id) VALUES (?,?,?,?,?,?,?)"
         self.prep1 = self.sess.prepare(query1)
         self.prep2 = self.sess.prepare(query2)
         self.prep3 = self.sess.prepare(query3)
@@ -55,13 +56,16 @@ class CassandraWriter():
         # buffer of futures
         for item in items:
             # if buffer full pop two elements from top
-            sample_name, sample_rep, x, y, patch_id, label, data = item
+            sample_name, sample_rep, x, y, patch_id, label, tissue, data = item
+            # if not enough tissue skip
+            if (tissue<.3):
+                continue;
             i1 = self.sess.execute_async(self.prep1, (sample_name, sample_rep,
-                                                      x, y, label, patch_id),
+                                                      x, y, label, tissue, patch_id),
                                          execution_profile='default',
                                          timeout=30)
             i3 = self.sess.execute_async(self.prep3, (sample_name, sample_rep,
-                                                      x, y, label, patch_id),
+                                                      x, y, label, tissue, patch_id),
                                          execution_profile='default',
                                          timeout=30)
             # wait for remaining async inserts to finish
@@ -82,19 +86,26 @@ class Tiler():
         self.pyram_lev = pyram_lev # setting level from which patches are read
         self.patch_x, self.patch_y = (256, 256)
         self.slide = openslide.OpenSlide(self.slide_fn)
+        self.ts_cl = td(model_fn='LSVM_tissue_bg_model_promort.pickle',
+                       th=0.8)
     def __del__(self):
         self.slide.close()
     def get_tile(self, x, y, label):
         patch = self.slide.read_region((x,y), self.pyram_lev,
                                      (self.patch_x, self.patch_y))
         patch = patch.convert('RGB')
+        # compute tissue coverage
+        ar = np.asarray(patch)
+        t_mask = self.ts_cl.get_tissue_mask(ar)
+        tissue = t_mask.mean()
+        # generate jpeg
         out_stream = io.BytesIO()
         patch.save(out_stream, format='JPEG', quality=90)
         # write to db
         out_stream.flush()
         data = out_stream.getvalue()
         patch_id = uuid.uuid4()
-        return (self.sample_name, self.sample_rep, x, y, patch_id, label, data)
+        return (self.sample_name, self.sample_rep, x, y, patch_id, label, tissue, data)
     def get_tiles(self, coords):
         for (x,y), label in coords:
             yield(self.get_tile(x, y, label))
@@ -152,9 +163,9 @@ def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
         cw = CassandraWriter(auth_prov, ['cassandra_db'],
-                             f'promort.ids_osk_{pyram_lev}',
-                             f'promort.data_osk_{pyram_lev}',
-                             f'promort.metadata_osk_{pyram_lev}',)
+                             f'promort.ids_cosk_{pyram_lev}',
+                             f'promort.data_cosk_{pyram_lev}',
+                             f'promort.metadata_cosk_{pyram_lev}',)
         cw.save_items(items)
     return(ret)
     
