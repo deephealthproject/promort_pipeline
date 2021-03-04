@@ -23,7 +23,7 @@ from tissue_detector import tissue_detector as td
 
 def tissue_kernel(scale=64) :
     def ret(arg_list) :
-        t_dec = td(model_fn='tissue_detector_model_withglue.bin',
+        t_dec = td(model_fn='LSVM_tissue_bg_model_promort.pickle',
                    gpu=False, th=0.8)
         for args in arg_list:
             slide, tissuedir, basename, suf = args
@@ -57,12 +57,12 @@ def spark_run():
     sc = SparkContext(conf=conf)
     spark = SparkSession(sc)
 
-    srcdir = '/data/promort/rois.test'
-    slidedir='/data/promort/prom2/slides'
-    tissuedir='/data/promort/tissue.test' # must have normal and tumor subdirs
+    coredir = '/data/o/svs_review/cores'
+    slidedir='/data/o/slides'
+    tissuedir='/data/o/tissue'
     suf = 'tissue'
     
-    dlist = os.scandir(srcdir)
+    dlist = os.scandir(coredir)
     basenames = [e.name for e in dlist if e.is_dir()]
 
     # build job list
