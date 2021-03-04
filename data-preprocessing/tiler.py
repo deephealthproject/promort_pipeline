@@ -30,10 +30,10 @@ from cassandra.cluster import ExecutionProfile
 slide_root = '/data/o/slides'
 masks_root = '/data/o/masks'
 ext = '.mrxs'
-pyram_lev = 1
+pyram_lev = 0
 
 class CassandraWriter():
-    def __init__(self, auth_prov, cassandra_ips, table1, table2):
+    def __init__(self, auth_prov, cassandra_ips, table1, table2, table3):
         prof = ExecutionProfile(
             load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
             row_factory = cassandra.query.dict_factory)
@@ -43,34 +43,34 @@ class CassandraWriter():
                                protocol_version=4,
                                auth_provider=auth_prov)
         self.sess = self.cluster.connect()
-        self.table1 = table1
-        self.table2 = table2
-        query1 = f"INSERT INTO {self.table1} (sample_name, sample_rep, x, y, label, patch_id) VALUES (?,?,?,?,?,?)"
-        query2 = f"INSERT INTO {self.table2} (patch_id, label, data) VALUES (?,?,?)"
+        query1 = f"INSERT INTO {table1} (sample_name, sample_rep, x, y, label, patch_id) VALUES (?,?,?,?,?,?)"
+        query2 = f"INSERT INTO {table2} (patch_id, label, data) VALUES (?,?,?)"
+        query3 = f"INSERT INTO {table3} (sample_name, sample_rep, x, y, label, patch_id) VALUES (?,?,?,?,?,?)"
         self.prep1 = self.sess.prepare(query1)
         self.prep2 = self.sess.prepare(query2)
+        self.prep3 = self.sess.prepare(query3)
     def __del__(self):
         self.cluster.shutdown()
     def save_items(self, items):
         # buffer of futures
-        ff=[]; max_ff=4
         for item in items:
             # if buffer full pop two elements from top
-            if (len(ff)>=max_ff):
-                f = ff.pop(0); f.result()
-                f = ff.pop(0); f.result()
             sample_name, sample_rep, x, y, patch_id, label, data = item
-            ff.append(self.sess.execute_async(self.prep1, (sample_name, sample_rep,
-                                                           x, y, label, patch_id),
-                                              execution_profile='default',
-                                              timeout=30))
-            ff.append(self.sess.execute_async(self.prep2, (patch_id, label, data),
-                                              execution_profile='default',
-                                              timeout=30))
-        # wait for remaining async inserts to finish
-        for f in ff:
-            f.result()
-        
+            i1 = self.sess.execute_async(self.prep1, (sample_name, sample_rep,
+                                                      x, y, label, patch_id),
+                                         execution_profile='default',
+                                         timeout=30)
+            i3 = self.sess.execute_async(self.prep3, (sample_name, sample_rep,
+                                                      x, y, label, patch_id),
+                                         execution_profile='default',
+                                         timeout=30)
+            # wait for remaining async inserts to finish
+            i1.result(); i3.result()
+            # insert heavy data synchronously
+            self.sess.execute(self.prep2, (patch_id, label, data),
+                              execution_profile='default',
+                              timeout=30)
+
 class Tiler():
     def __init__(self, sample, slide_fn, mask_norm_fn=None,
                  mask_tum_fn=None, pyram_lev=0):
@@ -152,8 +152,9 @@ def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
         cw = CassandraWriter(auth_prov, ['cassandra_db'],
-                             'promort.ids_1',
-                             'promort.data_1')
+                             'promort.ids_osk_0',
+                             'promort.data_osk_0',
+                             'promort.metadata_osk_0',)
         cw.save_items(items)
     return(ret)
     
@@ -172,7 +173,7 @@ def run():
     
     parts_0 = 48 # get list of patches
     parts_1 = 24 # extract patches
-    parts_2 = 12 # write to cassandra
+    parts_2 = 24 # write to cassandra
 
     samples = next(os.walk(os.path.join(masks_root,'normal')))[2]
     samples = [s.split('_')[0] for s in samples]
