@@ -27,8 +27,9 @@ from cassandra.auth import PlainTextAuthProvider
 from cassandra.policies import TokenAwarePolicy, DCAwareRoundRobinPolicy
 from cassandra.cluster import ExecutionProfile
 
-slide_root = '/data/o/slides'
-masks_root = '/data/o/masks'
+slide_root = '/data/promort/prom2/slides'
+masks_root = '/data/promort/prom2/masks'
+tissue_root = '/data/promort/prom2/tissue'
 ext = '.mrxs'
 pyram_lev = 0
 
@@ -73,12 +74,13 @@ class CassandraWriter():
 
 class Tiler():
     def __init__(self, sample, slide_fn, mask_norm_fn=None,
-                 mask_tum_fn=None, pyram_lev=0):
+                 mask_tum_fn=None, mask_tissue_fn=None, pyram_lev=0):
         self.slide_fn = slide_fn
         self.sample_name, srep = sample.split('-')
         self.sample_rep = int(srep)
         self.mask_norm_fn = mask_norm_fn
         self.mask_tum_fn = mask_tum_fn
+        self.mask_tissue_fn = mask_tissue_fn
         self.pyram_lev = pyram_lev # setting level from which patches are read
         self.patch_x, self.patch_y = (256, 256)
         self.slide = openslide.OpenSlide(self.slide_fn)
@@ -101,6 +103,7 @@ class Tiler():
     def get_coords(self):
         norm = Image.open(self.mask_norm_fn)
         tum = Image.open(self.mask_tum_fn)
+        tissue = Image.open(self.mask_tissue_fn)
         d0 = np.array(self.slide.dimensions)
         dL = np.array(self.slide.level_dimensions[self.pyram_lev])
         up_x, up_y = d0/dL
@@ -109,16 +112,19 @@ class Tiler():
         sc_x = ox/nx; sc_y = oy/ny
         mini_norm = norm.resize((nx, ny))
         mini_tum = tum.resize((nx, ny))
+        mini_tissue = tissue.resize((nx, ny))
         # label choice
         lab_norm = 1 # 0b01
         lab_tum = 2  # 0b10
         coords_norm = [((round(sc_x*x), round(sc_y*y)), lab_norm) for x in
                        range(nx) for y in range(ny)
-                       if mini_norm.getpixel((x,y))==1]
+                       if (mini_norm.getpixel((x,y))==1
+                           and mini_tissue.getpixel((x,y))==1)]
         coords_tum = [((round(sc_x*x), round(sc_y*y)), lab_tum) for x in
                       range(nx) for y in range(ny)
-                      if mini_tum.getpixel((x,y))==1]
-        norm.close(); tum.close()
+                      if (mini_tum.getpixel((x,y))==1
+                          and mini_tissue.getpixel((x,y))==1)]
+        norm.close(); tum.close(); tissue.close();
         return (coords_norm + coords_tum)
 
 def get_job_list(sample):
@@ -126,7 +132,8 @@ def get_job_list(sample):
     slide_fn = os.path.join(slide_root, sample+ext)
     mask_norm_fn = os.path.join(masks_root, 'normal', sample+'_mask.png')
     mask_tum_fn = os.path.join(masks_root, 'tumor', sample+'_mask.png')
-    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn,
+    mask_tissue_fn = os.path.join(tissue_root, sample+'_tissue.png')
+    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn, mask_tissue_fn,
                   pyram_lev=pyram_lev)
     coords = tiler.get_coords()
     def chunks(lst, m):
@@ -144,7 +151,8 @@ def get_tiles(params):
     slide_fn = os.path.join(slide_root, sample+ext)
     mask_norm_fn = os.path.join(masks_root, 'normal', sample+'_mask.png')
     mask_tum_fn = os.path.join(masks_root, 'tumor', sample+'_mask.png')
-    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn,
+    mask_tissue_fn = os.path.join(tissue_root, sample+'_tissue.png')
+    tiler = Tiler(sample, slide_fn, mask_norm_fn, mask_tum_fn, mask_tissue_fn,
                   pyram_lev=pyram_lev)
     return (tiler.get_tiles(coords))
 
@@ -152,9 +160,9 @@ def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
         cw = CassandraWriter(auth_prov, ['cassandra_db'],
-                             'promort.ids_osk_0',
-                             'promort.data_osk_0',
-                             'promort.metadata_osk_0',)
+                             'promort.ids_0',
+                             'promort.data_0',
+                             'promort.metadata_0',)
         cw.save_items(items)
     return(ret)
     
