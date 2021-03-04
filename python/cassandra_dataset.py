@@ -472,7 +472,7 @@ class CassandraDataset():
                                          split_ncols=split_ncols,
                                          num_classes=self.num_classes,
                                          seed=self.seed)
-    def init_datatable(self, table, label_col='label', data_col='data'):
+    def init_datatable(self, table, label_col='label', data_col='data', gen_handlers=True):
         """Setup queries for db table containing raw data
 
         :param table: Data table by ids
@@ -486,7 +486,7 @@ class CassandraDataset():
         self.label_col = label_col
         self.data_col = data_col
         # if splits are set up, then recreate batch handlers
-        if (self.split):
+        if (gen_handlers):
             self._reset_indexes()
     def save_rows(self, filename):
         """Save full list of DB rows to file
@@ -555,8 +555,6 @@ class CassandraDataset():
         :rtype: 
 
         """
-        self.split = None
-        
         print('Loading splits...')
         with open(filename, "rb") as f:
             stuff = pickle.load(f)
@@ -572,7 +570,7 @@ class CassandraDataset():
                               split_ncols=clm_split_ncols, id_col=self.id_col,
                               num_classes=self.num_classes)
         # init data table
-        self.init_datatable(table=table, label_col=label_col, data_col=data_col)
+        self.init_datatable(table=table, label_col=label_col, data_col=data_col, gen_handlers=False)
         # reload splits
         self.split = split
         self.n = self.row_keys.shape[0] # set size
@@ -622,7 +620,7 @@ class CassandraDataset():
          # wait for handlers to finish, if running
         if (self.batch_handler):
             for cs in range(self.num_splits):
-                self._compute_batch(cs)
+                self._ignore_batch(cs)
                             
         self.current_index = []
         self.batch_handler = []
@@ -676,8 +674,8 @@ class CassandraDataset():
                 if (shuffle):
                     self.split[cs] = np.random.permutation(self.split[cs])
                 # reset index and preload batch
+                self._ignore_batch(cs) # wait for handler to finish
                 self.current_index[cs] = 0
-                self._compute_batch(cs) # wait for handler to finish
                 self._preload_batch(cs)
     def _save_futures(self, rows, cs):
         # choose augmentation
@@ -689,6 +687,11 @@ class CassandraDataset():
         handler.reset(tot=len(rows))
         keys_ = [list(row.values())[0] for row in rows]
         handler.schedule_batch(keys_)
+    def _ignore_batch(self, cs):
+        if (self.current_index[cs]>=self.split[cs].shape[0]):
+            return # end of split, nothing to wait for
+        # wait for (and ignore) batch
+        self._compute_batch(cs)
     def _compute_batch(self, cs):
         hand = self.batch_handler[cs]
         return(hand.block_get_batch())
