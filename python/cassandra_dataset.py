@@ -472,7 +472,7 @@ class CassandraDataset():
                                          split_ncols=split_ncols,
                                          num_classes=self.num_classes,
                                          seed=self.seed)
-    def init_datatable(self, table, label_col='label', data_col='data', gen_handlers=True):
+    def init_datatable(self, table, label_col='label', data_col='data', gen_handlers=False):
         """Setup queries for db table containing raw data
 
         :param table: Data table by ids
