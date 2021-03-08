@@ -43,7 +43,7 @@ import pickle
 import models 
 import gc
 
-def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpus=[1], init=eddl.HeNormal, dropout=None, l2_reg=None):
+def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpus=[1], lsb=1, init=eddl.HeNormal, dropout=None, l2_reg=None):
     
     ## Network definition
     in_ = eddl.Input([3, in_size[0], in_size[1]])
@@ -61,6 +61,7 @@ def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=Fa
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
         #eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
+        #eddl.CS_GPU(gpus, mem="low_mem", lsb=lsb) if gpus else eddl.CS_CPU()
         eddl.CS_GPU(gpus, mem="low_mem") if gpus else eddl.CS_CPU()
         )
 
@@ -100,7 +101,7 @@ def main(args):
     print ('GPUs mask: %r' % gpus)
     ### Get Network
     net_init = eddl.HeNormal
-    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpus=gpus, init=net_init, dropout=args.dropout, l2_reg=args.l2_reg)
+    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpus=gpus, lsb=args.lsb, init=net_init, dropout=args.dropout, l2_reg=args.l2_reg)
     out = net.layers[-1]
     
     ## Load weights if requested
@@ -139,7 +140,7 @@ def main(args):
         # Load splits 
         cd.load_splits(args.splits_fn, batch_size=args.batch_size, augs=dataset_augs)
     else:
-        print ("Split file not found")
+        print ("Split file %s not found" % args.split_fn)
         sys.exit(-1)
 
     print ('Number of batches for each split (train, val, test):', cd.num_batches)
@@ -166,16 +167,18 @@ def main(args):
     val_acc_max = 0.0
 
     #### Code used to find best learning rate. Comment it to perform an actual training
-    #max_epochs = args.epochs
-    #lr_start = 1e-6
-    #lr_end = 1e-2
-    #lr_f = lambda x: 10**(np.log10(lr_start) + ((np.log10(lr_end)-np.log10(lr_start))/max_epochs)*x)
+    if args.find_opt_lr:
+        max_epochs = args.epochs
+        lr_start = args.lr
+        lr_end = args.lr_end
+        lr_f = lambda x: 10**(np.log10(lr_start) + ((np.log10(lr_end)-np.log10(lr_start))/max_epochs)*x)
     ####
 
     ### Main loop across epochs
     for e in range(args.epochs):
         ## SET LT
-        #eddl.setlr(net, [lr_f(e)])
+        if args.find_opt_lr:
+            eddl.setlr(net, [lr_f(e)])
 
         ### Training 
         cd.current_split = 0 ## Set the training split as the current one
@@ -186,10 +189,10 @@ def main(args):
         eddl.reset_loss(net)
         total_metric = []
         total_loss = []
-
+        
         ### Looping across batches of training data
         pbar = tqdm(range(num_batches_tr))
-        
+
         for b_index, b in enumerate(pbar):
             x, y = cd.load_batch()
             x.div_(255.0)
@@ -278,12 +281,15 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, metavar="INT", default=50, help='Number of epochs')
     parser.add_argument("--patience", type=int, metavar="INT", default=20, help='Number of epochs after which the training is stopped if validation accuracy does not improve (delta=0.001)')
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32, help='Batch size')
+    parser.add_argument("--lsb", type=int, metavar="INT", default=1, help='(Multi-gpu setting) Number of batches to run before synchronizing the weights of the different GPUs')
     parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5, help='Learning rate')
+    parser.add_argument("--lr_end", type=float, metavar="FLOAT", default=1e-5, help='Final learning rate. To be used with find-opt-lr option to scan learning rates')
     parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None, help='Float value (0-1) to specify the dropout ratio' )
-    parser.add_argument("--l2_reg", type=float, metavar="FLOAT", default=None, help='L2 regularization parameter')
-    parser.add_argument("--gpu", nargs='+', default = [], help='Specify GPU mask. For example: 1 to use only gpu0; 1,1 to use gpus 0 and 1; 1,1,1,1 to use gpus 0,1,2,3')
+    parser.add_argument("--l2-reg", type=float, metavar="FLOAT", default=None, help='L2 regularization parameter')
+    parser.add_argument("--gpu", nargs='+', default = [], help='Specify GPU mask. For example: 1 to use only gpu0; 1 1 to use gpus 0 and 1; 1 1 1 1 to use gpus 0,1,2,3')
     parser.add_argument("--save-weights", action="store_true", help='Network parameters are saved after each epoch')
     parser.add_argument("--augs-on", action="store_true", help='Activate data augmentations')
+    parser.add_argument("--find-opt-lr", action="store_true", help='Scan learning rate with an increasing exponential law to find best lr')
     parser.add_argument("--out-dir", metavar="DIR",
                         help="Specifies the output directory. If not set no output data is saved")
     parser.add_argument("--init-weights-fn", metavar="DIR",
