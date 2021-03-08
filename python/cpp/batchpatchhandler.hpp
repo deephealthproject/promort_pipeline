@@ -33,6 +33,7 @@ private:
   string username;
   string password;
   vector<string> cassandra_ips;
+  int port = 9042;
   // Cassandra connection and execution
   CassCluster* cluster = cass_cluster_new();
   CassSession* session = cass_session_new();
@@ -65,7 +66,7 @@ public:
   BatchPatchHandler(int num_classes, ecvl::Augmentation* aug, string table,
 		    string label_col, string data_col, string id_col,
 		    string username, string cass_pass,
-		    vector<string> cassandra_ips, int thread_par=32);
+		    vector<string> cassandra_ips, int thread_par=32, int port=9042);
   ~BatchPatchHandler();
   void schedule_batch(const vector<py::object>& keys);
   pair<shared_ptr<Tensor>, shared_ptr<Tensor>> load_batch(const vector<string>& keys);

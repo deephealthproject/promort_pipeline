@@ -40,7 +40,8 @@ class PagedResultHandler():
 # Handler for batch of patches
 class BatchPatchHandler():
     def __init__(self, num_classes, aug, table, label_col, data_col,
-                 id_col, username, cass_pass, cassandra_ips):
+                 id_col, username, cass_pass, cassandra_ips,
+                 thread_par=32, port=9042):
         self.aug = aug
         self.num_classes = num_classes
         self.label_col = label_col
@@ -48,6 +49,7 @@ class BatchPatchHandler():
         self.id_col = id_col
         self.finished_event = threading.Event()
         self.lock = threading.Lock()
+        self.thread_par = thread_par
         self.tot = None
         self.cow = 0
         self.onair = 0
@@ -65,7 +67,8 @@ class BatchPatchHandler():
         self.cluster = Cluster(cassandra_ips,
                                execution_profiles=profs,
                                protocol_version=4,
-                               auth_provider=auth_prov)
+                               auth_provider=auth_prov,
+                               port=port)
         self.cluster.connect_timeout = 10 #seconds
         self.sess = self.cluster.connect()
         self.table = table
@@ -85,7 +88,8 @@ class BatchPatchHandler():
         self.finished_event.clear()
     def schedule_batch(self, keys_):
         kk = list(enumerate(keys_))
-        cass_par = min(32, self.tot) # concurrent queries to Cassandra server
+        # concurrent queries to Cassandra server
+        cass_par = min(self.thread_par, self.tot)
         while (len(kk)>0):
             with self.lock:
                 if (self.onair<cass_par):
@@ -155,7 +159,7 @@ class BatchPatchHandler():
 class CassandraListManager():
     def __init__(self, auth_prov, cassandra_ips, table,
                  partition_cols, id_col, split_ncols=1, num_classes=2,
-                 seed=None):
+                 seed=None, port=9042):
         """Loads the list of patches from Cassandra DB
 
         :param auth_prov: Authenticator for Cassandra
@@ -184,7 +188,8 @@ class CassandraListManager():
         self.cluster = Cluster(cassandra_ips,
                                execution_profiles=profs,
                                protocol_version=4,
-                               auth_provider=auth_prov)
+                               auth_provider=auth_prov,
+                               port=port)
         self.cluster.connect_timeout = 10 #seconds
         self.sess = self.cluster.connect()
         self.table = table
@@ -402,7 +407,7 @@ class CassandraListManager():
 
 ## ecvl reader for Cassandra
 class CassandraDataset():
-    def __init__(self, auth_prov, cassandra_ips, seed=None):
+    def __init__(self, auth_prov, cassandra_ips, port=9042, seed=None):
         """Create ECVL Dataset from Cassandra DB
 
         :param auth_prov: Authenticator for Cassandra
@@ -423,6 +428,7 @@ class CassandraDataset():
         ## cassandra parameters
         self.cassandra_ips = cassandra_ips
         self.auth_prov = auth_prov
+        self.port = port
         # query variables
         self.table = None
         self.metatable = None
@@ -466,6 +472,7 @@ class CassandraDataset():
         self.metatable = metatable
         self._clm = CassandraListManager(auth_prov=self.auth_prov,
                                          cassandra_ips=self.cassandra_ips,
+                                         port=self.port,
                                          table=table,
                                          partition_cols=partition_cols,
                                          id_col=self.id_col,
@@ -620,7 +627,10 @@ class CassandraDataset():
          # wait for handlers to finish, if running
         if (self.batch_handler):
             for cs in range(self.num_splits):
-                self._ignore_batch(cs)
+                try:
+                    self._ignore_batch(cs)
+                except:
+                    pass
                             
         self.current_index = []
         self.batch_handler = []
@@ -640,7 +650,8 @@ class CassandraDataset():
                                         table=self.table, aug=aug,
                                         username=ap.username,
                                         cass_pass=ap.password,
-                                        cassandra_ips=self.cassandra_ips)
+                                        cassandra_ips=self.cassandra_ips,
+                                        port=self.port)
             self.batch_handler.append(handler)
             self.num_batches.append(len(self.split[cs]+self.batch_size-1)
                                     // self.batch_size)
@@ -674,7 +685,10 @@ class CassandraDataset():
                 if (shuffle):
                     self.split[cs] = np.random.permutation(self.split[cs])
                 # reset index and preload batch
-                self._ignore_batch(cs) # wait for handler to finish
+                try:
+                    self._ignore_batch(cs) # wait for handler to finish
+                except:
+                    pass
                 self.current_index[cs] = 0
                 self._preload_batch(cs)
     def _save_futures(self, rows, cs):

@@ -18,6 +18,7 @@ void BatchPatchHandler::connect(){
   // FIXME: now using only first cassandra server
   cass_cluster_set_contact_points(cluster, cassandra_ips[0].c_str());
   cass_cluster_set_credentials(cluster, username.c_str(), password.c_str());
+  cass_cluster_set_port(cluster, port);
   CassFuture* connect_future = cass_session_connect(session, cluster);
   CassError rc = cass_future_error_code(connect_future);
   cass_future_free(connect_future);
@@ -33,10 +34,10 @@ BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
 				     string data_col, string id_col,
 				     string username, string cass_pass,
 				     vector<string> cassandra_ips,
-				     int thread_par) :
+				     int thread_par, int port) :
   num_classes(num_classes), aug(aug), table(table), label_col(label_col),
   data_col(data_col), id_col(id_col), username(username),
-  password(cass_pass), cassandra_ips(cassandra_ips)
+  password(cass_pass), cassandra_ips(cassandra_ips), port(port)
 {
   // connect to cluster and init session
   connect();
