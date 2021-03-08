@@ -283,7 +283,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32, help='Batch size')
     parser.add_argument("--lsb", type=int, metavar="INT", default=1, help='(Multi-gpu setting) Number of batches to run before synchronizing the weights of the different GPUs')
     parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5, help='Learning rate')
-    parser.add_argument("--lr_end", type=float, metavar="FLOAT", default=1e-5, help='Final learning rate. To be used with find-opt-lr option to scan learning rates')
+    parser.add_argument("--lr_end", type=float, metavar="FLOAT", default=1e-2, help='Final learning rate. To be used with find-opt-lr option to scan learning rates')
     parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None, help='Float value (0-1) to specify the dropout ratio' )
     parser.add_argument("--l2-reg", type=float, metavar="FLOAT", default=None, help='L2 regularization parameter')
     parser.add_argument("--gpu", nargs='+', default = [], help='Specify GPU mask. For example: 1 to use only gpu0; 1 1 to use gpus 0 and 1; 1 1 1 1 to use gpus 0,1,2,3')
