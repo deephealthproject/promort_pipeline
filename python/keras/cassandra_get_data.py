@@ -39,9 +39,9 @@ def main(args):
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
     cd = CassandraDataset(ap, ['127.0.0.1'])
 
-    cd.init_listmanager(meta_table='promort.osk_ids', id_col='patch_id',
-                        split_ncols=2, num_classes=num_classes, 
-                        partition_cols=['sample_name', 'sample_rep', 'label'])
+    #cd.init_listmanager(meta_table='promort.osk_ids', id_col='patch_id',
+    #                    split_ncols=2, num_classes=num_classes, 
+    #                    partition_cols=['sample_name', 'sample_rep', 'label'])
     
     cd.load_splits(args.splits_fn, batch_size=32, augs=[])
         
@@ -68,12 +68,12 @@ def main(args):
         pbar = tqdm(range(n_rows))
        
         query = f"SELECT {cd.id_col}, {cd.label_col}, {cd.data_col} FROM {cd.table} WHERE {cd.id_col}=?"
-        prep = cd.sess.prepare(query)
+        prep = cd._clm.sess.prepare(query)
 
         pbar = tqdm(rows)
         for r_index, r in enumerate(pbar):
             key = rows[r_index]
-            res = cd.sess.execute(prep, key, execution_profile='tuple')
+            res = cd._clm.sess.execute(prep, key, execution_profile='tuple')
             data = res.one()
             idx = '%s.jpg' % str(data[0])
             lab = data[1]
