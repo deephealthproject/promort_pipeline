@@ -623,7 +623,7 @@ class CassandraDataset():
         self._update_split_params(num_splits=num_splits, augs=augs,
                                   batch_size=batch_size)
         self._reset_indexes()
-    def _reset_indexes(self):
+    def _ignore_batches(self):
          # wait for handlers to finish, if running
         if (self.batch_handler):
             for cs in range(self.num_splits):
@@ -631,6 +631,8 @@ class CassandraDataset():
                     self._ignore_batch(cs)
                 except:
                     pass
+    def _reset_indexes(self):
+        self._ignore_batches()
                             
         self.current_index = []
         self.batch_handler = []
@@ -653,7 +655,7 @@ class CassandraDataset():
                                         cassandra_ips=self.cassandra_ips,
                                         port=self.port)
             self.batch_handler.append(handler)
-            self.num_batches.append(len(self.split[cs]+self.batch_size-1)
+            self.num_batches.append((self.split[cs].shape[0]+self.batch_size-1)
                                     // self.batch_size)
             # preload batches
             self._preload_batch(cs)
@@ -676,6 +678,7 @@ class CassandraDataset():
         :rtype: 
 
         """
+        self._ignore_batches()
         if (chosen_split is None):
             splits = range(self.num_splits)
         else:
@@ -685,10 +688,6 @@ class CassandraDataset():
                 if (shuffle):
                     self.split[cs] = np.random.permutation(self.split[cs])
                 # reset index and preload batch
-                try:
-                    self._ignore_batch(cs) # wait for handler to finish
-                except:
-                    pass
                 self.current_index[cs] = 0
                 self._preload_batch(cs)
     def _save_futures(self, rows, cs):
