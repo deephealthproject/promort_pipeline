@@ -80,6 +80,7 @@ class BatchPatchHandler():
     def reset(self, tot):
         self.tot = tot
         self.cow = 0
+        self.onair = 0
         self.errors = []
         self.feats = []
         self.labels = []
@@ -87,6 +88,7 @@ class BatchPatchHandler():
         self.bb = None
         self.finished_event.clear()
     def schedule_batch(self, keys_):
+        self.reset(tot=len(keys_))
         kk = list(enumerate(keys_))
         # concurrent queries to Cassandra server
         cass_par = min(self.thread_par, self.tot)
@@ -623,6 +625,11 @@ class CassandraDataset():
         self._update_split_params(num_splits=num_splits, augs=augs,
                                   batch_size=batch_size)
         self._reset_indexes()
+    def _ignore_batch(self, cs):
+        if (self.current_index[cs]>self.split[cs].shape[0]):
+            return # end of split, nothing to wait for
+        # wait for (and ignore) batch
+        self._compute_batch(cs)
     def _ignore_batches(self):
          # wait for handlers to finish, if running
         if (self.batch_handler):
@@ -697,14 +704,8 @@ class CassandraDataset():
             aug = self.augs[cs]
         # get and convert whole batch asynchronously
         handler = self.batch_handler[cs]
-        handler.reset(tot=len(rows))
         keys_ = [list(row.values())[0] for row in rows]
         handler.schedule_batch(keys_)
-    def _ignore_batch(self, cs):
-        if (self.current_index[cs]>=self.split[cs].shape[0]):
-            return # end of split, nothing to wait for
-        # wait for (and ignore) batch
-        self._compute_batch(cs)
     def _compute_batch(self, cs):
         hand = self.batch_handler[cs]
         return(hand.block_get_batch())

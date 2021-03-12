@@ -71,7 +71,6 @@ public:
   void schedule_batch(const vector<py::object>& keys);
   pair<shared_ptr<Tensor>, shared_ptr<Tensor>> load_batch(const vector<string>& keys);
   pair<shared_ptr<Tensor>, shared_ptr<Tensor>> block_get_batch();
-  void reset(int tot){}
 };
 
 #endif
