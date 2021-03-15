@@ -39,6 +39,8 @@ BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
   data_col(data_col), id_col(id_col), username(username),
   password(cass_pass), cassandra_ips(cassandra_ips), port(port)
 {
+  // set multi-label or not
+  multi_label = (num_classes>_max_multilabs) ? false : true;
   // connect to cluster and init session
   connect();
   // assemble query
@@ -134,11 +136,18 @@ void BatchPatchHandler::get_img(const CassRow* row, int off){
   // Tensor* tf = t_feats.get();
   // ecvl::ImageToTensor(im, tf, off);
 
-  // convert label to int
+  // convert label 
   float* p_labs = t_labs->ptr + off*num_classes;
-  for(int i=0; i<num_classes; ++i){
-    *(p_labs++) = static_cast<float>(lab&1);
-    lab>>=1;
+  if (multi_label){ // multi-label encoding
+    for(int i=0; i<num_classes; ++i){
+      *(p_labs++) = static_cast<float>(lab&1);
+      lab>>=1;
+    }
+  } else { // int to one-hot
+    for(int i=0; i<num_classes; ++i){
+      float b = (i==lab)? 1.0 : 0.0;
+      *(p_labs++) = b;
+    }
   }
 }
 

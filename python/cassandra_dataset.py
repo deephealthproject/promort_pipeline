@@ -17,6 +17,8 @@ from cassandra.auth import PlainTextAuthProvider
 from cassandra.policies import TokenAwarePolicy, DCAwareRoundRobinPolicy
 from cassandra.cluster import ExecutionProfile
 
+_max_multilabs = 32
+
 # Handler for large query results
 class PagedResultHandler():
     def __init__(self, future):
@@ -58,6 +60,8 @@ class BatchPatchHandler():
         self.labels = []
         self.perm = []
         self.bb = None
+        ## multi-label when num_classes is small
+        self.multi_label = (num_classes<=_max_multilabs)
         ## cassandra parameters
         prof_dict = ExecutionProfile(
             load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
@@ -110,9 +114,14 @@ class BatchPatchHandler():
         # read label
         lab = item[self.label_col] # read 32-bit int
         # convert to bits
-        lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
-        lab = lab[-self.num_classes:] # take last num_classes bits
-        lab = np.flip(lab) # reverse order
+        if (self.multi_label):
+            lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
+            lab = lab[-self.num_classes:] # take last num_classes bits
+            lab = np.flip(lab) # reverse order
+        else:
+            v_lab = np.zeros([self.num_classes])
+            v_lab[lab] = 1
+            lab = v_lab
         # read image
         raw_img = item[self.data_col]
         in_stream = io.BytesIO(raw_img)
@@ -204,7 +213,12 @@ class CassandraListManager():
         self.sample_names = None
         self._rows = None
         self.num_classes = num_classes
-        self.labs = [2**i for i in range(self.num_classes)]
+        ## multi-label when num_classes is small
+        self.multi_label = (num_classes<=_max_multilabs)
+        if (self.multi_label):
+            self.labs = [2**i for i in range(self.num_classes)]
+        else:
+            self.labs = list(range(self.num_classes))
         # split variables
         self.row_keys = None
         self.max_patches = None
