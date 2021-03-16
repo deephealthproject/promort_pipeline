@@ -89,8 +89,13 @@ ecvl::Image BatchPatchHandler::buf2img(const vector<char>& buf){
   return(r);
 }
 
-void BatchPatchHandler::get_img(const CassRow* row, int off){
+void BatchPatchHandler::get_img(const CassResult* result, int off){
   // decode result
+  const CassRow* row = cass_result_first_row(result);
+  if (row == NULL) {
+    // Handle error
+    throw runtime_error("Error: query returned empty set");
+  }
   const CassValue* c_lab =
     cass_row_get_column_by_name(row, label_col.c_str());
   const CassValue* c_data =
@@ -106,6 +111,8 @@ void BatchPatchHandler::get_img(const CassRow* row, int off){
   if (!im.contiguous_){
         throw runtime_error("Image data not contiguous.");
   }
+  // free Cassandra result memory (values included)
+  cass_result_free(result);
   ////////////////////////////////////////////////////////////////////////
   // run by just one thread
   ////////////////////////////////////////////////////////////////////////
@@ -119,8 +126,8 @@ void BatchPatchHandler::get_img(const CassRow* row, int off){
   }
   // allocate batch if needed
   if (init_batch){
-    t_feats = shared_ptr<Tensor>(new Tensor({bs, chan, height, width}));
-    t_labs = shared_ptr<Tensor>(new Tensor({bs, num_classes}));
+    t_feats = unique_ptr<Tensor>(new Tensor({bs, chan, height, width}));
+    t_labs = unique_ptr<Tensor>(new Tensor({bs, num_classes}));
   }
   init_batch = false;
   mtx.unlock();
@@ -165,12 +172,7 @@ void BatchPatchHandler::future2img(CassFuture* query_future, int off){
 			string(error_message));
   }
   cass_future_free(query_future);
-  const CassRow* row = cass_result_first_row(result);
-  if (row == NULL) {
-    // Handle error
-    throw runtime_error("Error: query returned empty set");
-  }
-  get_img(row, off);
+  get_img(result, off);
 }
 
 vector<CassFuture*> BatchPatchHandler::keys2futures(const vector<string>& keys){
@@ -207,12 +209,12 @@ void BatchPatchHandler::get_images(const vector<string>& keys){
   }
 }
 
-pair<shared_ptr<Tensor>, shared_ptr<Tensor>> BatchPatchHandler::load_batch(const vector<string>& keys){
+pair<unique_ptr<Tensor>, unique_ptr<Tensor>> BatchPatchHandler::load_batch(const vector<string>& keys){
   bs = keys.size();
   init_batch = true;
   // get images and assemble batch
   get_images(keys);
-  auto r = make_pair(t_feats, t_labs);
+  auto r = make_pair(move(t_feats), move(t_labs));
   return(r);
 }
 
@@ -229,7 +231,9 @@ void BatchPatchHandler::schedule_batch(const vector<py::object>& keys){
 }
 
 pair<shared_ptr<Tensor>, shared_ptr<Tensor>> BatchPatchHandler::block_get_batch(){
-  auto r = batch.get();
+  auto b = batch.get();
+  auto r = make_pair(shared_ptr<Tensor>(move(b.first)),
+		     shared_ptr<Tensor>(move(b.second)));
   return(r);
 }
 

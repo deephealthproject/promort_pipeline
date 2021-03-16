@@ -51,16 +51,16 @@ private:
   int width;
   int tot_dims;
   // current batch
-  future<pair<shared_ptr<Tensor>, shared_ptr<Tensor>>> batch;
-  pair<shared_ptr<Tensor>, shared_ptr<Tensor>> t_batch; // test
-  shared_ptr<Tensor> t_feats;
-  shared_ptr<Tensor> t_labs;
+  future<pair<unique_ptr<Tensor>, unique_ptr<Tensor>>> batch;
+  pair<unique_ptr<Tensor>, unique_ptr<Tensor>> t_batch; // test
+  unique_ptr<Tensor> t_feats;
+  unique_ptr<Tensor> t_labs;
   // methods
   void connect();
   vector<char> file2buf(string filename);
   ecvl::Image buf2img(const vector<char>& buf);
   cv::Mat buf2mat(const vector<char>& buf);
-  void get_img(const CassRow* row, int off);
+  void get_img(const CassResult* result, int off);
   void get_images(const vector<string>& keys);
   vector<CassFuture*> keys2futures(const vector<string>& keys);
   void future2img(CassFuture* query_future, int off);
@@ -71,7 +71,7 @@ public:
 		    vector<string> cassandra_ips, int thread_par=32, int port=9042);
   ~BatchPatchHandler();
   void schedule_batch(const vector<py::object>& keys);
-  pair<shared_ptr<Tensor>, shared_ptr<Tensor>> load_batch(const vector<string>& keys);
+  pair<unique_ptr<Tensor>, unique_ptr<Tensor>> load_batch(const vector<string>& keys);
   pair<shared_ptr<Tensor>, shared_ptr<Tensor>> block_get_batch();
 };
 
