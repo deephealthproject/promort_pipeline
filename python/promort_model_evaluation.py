@@ -6,6 +6,7 @@ import argparse
 import random
 import sys
 import os
+import glob
 from pathlib import Path
 
 import pyecvl.ecvl as ecvl
@@ -22,6 +23,21 @@ import pickle
 
 import models 
 import gc
+
+
+def get_best_weight_file(path):
+    ### Get the weight file which gave the maximum validation accuracy
+    hfn = os.path.join(path, 'history.pickle')
+    history = pickle.load(open(hfn, 'rb'))
+    val_acc = history['val_acc']
+    ep_acc_l = [(i, val) for i,val in enumerate(val_acc)]
+    ep_acc_l_sorted = sorted(ep_acc_l, key=lambda x: x[1], reverse=True)
+    max_epoch = ep_acc_l_sorted[0][0]
+    fn = [i for i in glob.glob(os.path.join(path, "*.bin")) if "ep_%d_vacc" % max_epoch in i][0]
+   
+    print ("Weight file used: %s" % fn)
+    return fn
+
 
 def get_net(in_size=[256,256], num_classes=2, gpu=True):
     
@@ -55,11 +71,19 @@ def main(args):
     
     ## Load weights if requested
     print ("Loading initialization weights")
-    eddl.load(net, args.weights_fn)
-    
+    if args.weights_fn:
+        weights_fn = args.weights_fn
+    elif args.weights_path:
+        weights_fn = get_best_weight_file(args.weights_path)
+    else:
+        print ("One of --weights_fn or --weights_path is required")
+        sys.exit(-1)
+   
+    eddl.load(net, weights_fn)
+
     ## Check options
     print ("Creating output directory...")
-    working_dir = "%s_%s" % (os.path.basename(args.splits_fn), os.path.basename(args.weights_fn))
+    working_dir = "%s_%s" % (os.path.basename(args.splits_fn), os.path.basename(weights_fn))
     res_dir = os.path.join(args.out_dir, working_dir)
     os.makedirs(res_dir, exist_ok=True)
     fn = os.path.join(res_dir, "pred.csv")
@@ -132,10 +156,10 @@ def main(args):
             p_id = str(ids[k]['patch_id'])
             result_np = result.getdata()[0]
             gt_np = target.getdata()[0]
-            normal_p = result_np[1]
-            tumor_p = result_np[0]
-            normal_gt = gt_np[1]
-            tumor_gt = gt_np[0]
+            normal_p = result_np[0]
+            tumor_p = result_np[1]
+            normal_gt = gt_np[0]
+            tumor_gt = gt_np[1]
 
             fd.write('%s,%.2f,%.2f,%.2f,%.2f\n' % (p_id, normal_p, tumor_p, normal_gt, tumor_gt))
 
@@ -150,7 +174,7 @@ def main(args):
     fd.close()
     total_avg = np.mean(total_metric)
 
-    print("Total categorical accuracy: {:.2f}\n".format(total_avg))
+    print("Total categorical accuracy: {:.3f}\n".format(total_avg))
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
@@ -158,12 +182,14 @@ if __name__ == "__main__":
     parser.add_argument("--gpu", action="store_true")
     parser.add_argument("--out-dir", metavar="DIR", required=True,
                         help="if set, save images in this directory")
-    parser.add_argument("--weights-fn", metavar="DIR", required=True,
-                        help="if set, a new set of weight are loaded to start the training")
+    parser.add_argument("--weights-fn", metavar="DIR", 
+                        help="filename of a weight file")
+    parser.add_argument("--weights-path", metavar="DIR",
+                        help="path to get the weight files which resulted in the best validation accuracy score")
     parser.add_argument("--splits-fn", metavar="STR", required=True,
                         help="split filename. It is pickle file")
     parser.add_argument("--split-index", type=int, default=1,
                         help="set the split that has to be evaluated")
-    parser.add_argument("--cassandra-pwd-fn", metavar="STR",
+    parser.add_argument("--cassandra-pwd-fn", metavar="STR", default='/tmp/cassandra_pass.txt',
                         help="cassandra password")
     main(parser.parse_args())
