@@ -8,6 +8,7 @@ from getpass import getpass
 from tqdm import tqdm
 import numpy as np
 import pickle 
+import random
 
 def main(args):
     cassandra_pwd_fn = args.cassandra_pwd_fn
@@ -38,6 +39,7 @@ def main(args):
     query = f"SELECT * FROM {cd.metatable} WHERE {'patch_id'}=?"
     prep = cd._clm.sess.prepare(query)
 
+    new_row_keys_d = [{} for i in range(cd.num_splits)]
     new_row_keys_l = [[] for i in range(cd.num_splits)]
 
     for si in range(cd.num_splits):
@@ -52,13 +54,21 @@ def main(args):
             # patch_id, class, sample_name, sample_rep, tissue coverage ratio, x, y
 
             idx = data[0]
+            lab = data[1]
             tcr = data[4]
 
             if (tcr >= tissue_th_min) and (tcr <= tissue_th_max):
-                new_row_keys_l[si].append({'patch_id': idx})
+                new_row_keys_d[si].setdefault(lab, []).append({'patch_id': idx})
 
         pbar.close()
-        
+
+        # Balance labels
+        n_min = min([len(new_row_keys_d[si][k]) for k in new_row_keys_d[si].keys()])
+        for k in new_row_keys_d[si].keys():
+            tmp = new_row_keys_d[si][k]
+            random.shuffle(tmp)
+            new_row_keys_l[si] += tmp[:n_min]
+    
     ## New cassandra fields related to filtered splits 
     new_row_keys_l_flat = [item for sublist in new_row_keys_l for item in sublist]
     new_row_keys = np.array(new_row_keys_l_flat)
