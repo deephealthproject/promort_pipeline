@@ -27,6 +27,7 @@ import random
 import sys
 import os
 from pathlib import Path
+import time
 
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
@@ -133,31 +134,52 @@ def main(args):
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
     #cd = CassandraDataset(ap, ['cassandra_db'])
-    cd = CassandraDataset(ap, ['127.0.0.1'])
+    cd = CassandraDataset(ap, ['127.0.0.1'], seed=args.seed)
 
     # Check if file exists
     if Path(args.splits_fn).exists():
         # Load splits 
         cd.load_splits(args.splits_fn, batch_size=args.batch_size, augs=dataset_augs)
     else:
-        print ("Split file %s not found" % args.split_fn)
+        print ("Split file %s not found" % args.splits_fn)
         sys.exit(-1)
 
     print ('Number of batches for each split (train, val, test):', cd.num_batches)
+    
+    ## validation index check and creation of split indexes lists
+    if args.val_split_indexes:
+        n_splits = cd.num_splits
+        out_indexes = [i for i in args.val_split_indexes if i > (n_splits-1)]
+        if out_indexes:
+            print ("Not valid validation split index: %r" % out_indexes)
+            sys.exit(-1)
 
+        val_splits = args.val_split_indexes
+        test_splits = args.test_split_indexes
+        train_splits = [i for i in range(n_splits) if (i not in val_splits) and (i not in test_splits)]
+        num_batches_tr = np.sum([cd.num_batches[i] for i in train_splits])
+        num_batches_val = np.sum([cd.num_batches[i] for i in val_splits])
+
+        print ("Train splits: %r" % train_splits)
+        print ("Val splits: %r" % val_splits)
+        print ("Test splits: %r" % test_splits)
+    
+    else:
+        num_batches_tr = cd.num_batches[0]
+        num_batches_val = cd.num_batches[1]
+
+    
     ################################
     #### Training and evaluation ###
     ################################
 
     print("Defining metric...", flush=True)
     
-    metric = eddl.getMetric("categorical_accuracy")
+    metric_fn = eddl.getMetric("categorical_accuracy")
+    loss_fn = eddl.getLoss("soft_cross_entropy")
 
     print("Starting training", flush=True)
 
-    num_batches_tr = cd.num_batches[0]
-    num_batches_val = cd.num_batches[1]
-    
     loss_l = []
     acc_l = []
     val_loss_l = []
@@ -194,7 +216,11 @@ def main(args):
         pbar = tqdm(range(num_batches_tr))
 
         for b_index, b in enumerate(pbar):
-            x, y = cd.load_batch()
+            if args.val_split_indexes:
+                x, y = cd.load_batch_cross(not_splits=val_splits+test_splits)
+            else:
+                x, y = cd.load_batch()
+    
             x.div_(255.0)
             tx, ty = [x], [y]
             eddl.train_batch(net, tx, ty)
@@ -216,38 +242,42 @@ def main(args):
         ### Evaluation on validation set batches
         cd.current_split = 1 ## Set validation split as the current one
         total_metric = []
-        batch_loss = []
+        total_loss = []
         
         print("Epoch %d/%d - Evaluation" % (e + 1, args.epochs), flush=True)
         
         pbar = tqdm(range(num_batches_val))
 
         for b_index, b in enumerate(pbar):
-            n = 0
-            x, y = cd.load_batch()
+            if args.val_split_indexes:
+                x, y = cd.load_batch_cross(not_splits=train_splits+test_splits)
+            else:
+                x, y = cd.load_batch()
+
             x.div_(255.0)
             eddl.forward(net, [x])
             output = eddl.getOutput(out)
+            sum_ca = 0.0 ## sum of samples accuracy within a batch
+            sum_ce = 0.0 ## sum of losses within a batch
 
-            sum_ = 0.0
-            net.compute_loss()
-            loss = eddl.get_losses(net)[0]
-            batch_loss.append(loss)
-
+            n = 0
             for k in range(x.getShape()[0]):
                 result = output.select([str(k)])
                 target = y.select([str(k)])
-                ca = metric.value(target, result)
+                ca = metric_fn.value(target, result)
+                ce = loss_fn.value(target, result)
                 total_metric.append(ca)
-                sum_ += ca
+                total_loss.append(ce)
+                sum_ca += ca
+                sum_ce += ce
                 n += 1
             
-            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) loss: {:.3f}, acc: {:.3f} ".format(e + 1, args.epochs, b + 1, num_batches_val, loss, (sum_ / n))
+            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) loss: {:.3f}, acc: {:.3f} ".format(e + 1, args.epochs, b + 1, num_batches_val, (sum_ce / n), (sum_ca / n))
             pbar.set_postfix_str(msg)
              
         pbar.close()
         val_batch_acc_avg = np.mean(total_metric)
-        val_batch_loss_avg = np.mean(batch_loss)
+        val_batch_loss_avg = np.mean(total_loss)
         val_loss_l.append(val_batch_loss_avg)
         val_acc_l.append(val_batch_acc_avg)
     
@@ -281,7 +311,10 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, metavar="INT", default=50, help='Number of epochs')
     parser.add_argument("--patience", type=int, metavar="INT", default=20, help='Number of epochs after which the training is stopped if validation accuracy does not improve (delta=0.001)')
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32, help='Batch size')
+    parser.add_argument("--val-split-indexes", type=int, nargs='+', default=[], help='List of split indexs to be used as validation set in case of a multisplit dataset (e.g. for cross validation purpose')
+    parser.add_argument("--test-split-indexes", type=int, nargs='+', default=[], help='List of split indexs to be used as validation set in case of a multisplit dataset (e.g. for cross validation purpose')
     parser.add_argument("--lsb", type=int, metavar="INT", default=1, help='(Multi-gpu setting) Number of batches to run before synchronizing the weights of the different GPUs')
+    parser.add_argument("--seed", type=int, metavar="INT", default=None, help='Seed of the random generator to manage data load')
     parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5, help='Learning rate')
     parser.add_argument("--lr_end", type=float, metavar="FLOAT", default=1e-2, help='Final learning rate. To be used with find-opt-lr option to scan learning rates')
     parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None, help='Float value (0-1) to specify the dropout ratio' )
