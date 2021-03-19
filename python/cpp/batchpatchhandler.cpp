@@ -19,6 +19,7 @@ void BatchPatchHandler::connect(){
   cass_cluster_set_contact_points(cluster, cassandra_ips[0].c_str());
   cass_cluster_set_credentials(cluster, username.c_str(), password.c_str());
   cass_cluster_set_port(cluster, port);
+  cass_cluster_set_protocol_version(cluster, CASS_PROTOCOL_VERSION_V4);
   CassFuture* connect_future = cass_session_connect(session, cluster);
   CassError rc = cass_future_error_code(connect_future);
   cass_future_free(connect_future);
