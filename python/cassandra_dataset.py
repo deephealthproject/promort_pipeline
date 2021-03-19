@@ -167,6 +167,11 @@ class BatchPatchHandler():
             raise self.errors[0]
         return(self.bb)
 
+try: 
+    from BPH import BatchPatchHandler
+except ImportError:
+    print('C++ BatchPatchHandler not found, using Python one.')
+    
 class CassandraListManager():
     def __init__(self, auth_prov, cassandra_ips, table,
                  partition_cols, id_col, split_ncols=1, num_classes=2,
