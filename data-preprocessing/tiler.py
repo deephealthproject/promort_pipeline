@@ -30,7 +30,7 @@ from cassandra.cluster import ExecutionProfile
 slide_root = '/data/o/slides'
 masks_root = '/data/o/masks'
 ext = '.mrxs'
-pyram_lev = 0
+pyram_lev = 1
 
 class CassandraWriter():
     def __init__(self, auth_prov, cassandra_ips, table1, table2, table3):
@@ -89,7 +89,7 @@ class Tiler():
                                      (self.patch_x, self.patch_y))
         patch = patch.convert('RGB')
         out_stream = io.BytesIO()
-        patch.save(out_stream, format='JPEG')
+        patch.save(out_stream, format='JPEG', quality=90)
         # write to db
         out_stream.flush()
         data = out_stream.getvalue()
@@ -152,9 +152,9 @@ def write_to_cassandra(password):
     def ret(items):
         auth_prov = PlainTextAuthProvider('prom', password)
         cw = CassandraWriter(auth_prov, ['cassandra_db'],
-                             'promort.ids_osk_0',
-                             'promort.data_osk_0',
-                             'promort.metadata_osk_0',)
+                             f'promort.ids_osk_{pyram_lev}',
+                             f'promort.data_osk_{pyram_lev}',
+                             f'promort.metadata_osk_{pyram_lev}',)
         cw.save_items(items)
     return(ret)
     
