@@ -229,6 +229,8 @@ class CassandraListManager():
         self.max_patches = None
         self.n = None
         self.tot = None
+        self._bags = None
+        self._cow_rows = None
         self._stats = None
         self._rows = None
         self.balance = None
@@ -321,6 +323,126 @@ class CassandraListManager():
             self.balance = np.ones(self.num_classes)
         assert(self.balance.shape[0]==self.num_classes)
         self.balance = self.balance/self.balance.sum()
+    def _split_groups(self):
+        """partitioning groups of images in bags
+
+        :returns: 
+        :rtype: 
+
+        """
+        # init counter per each partition
+        self._cow_rows = {}
+        for sn in self._rows.keys():
+            self._cow_rows[sn]={}
+            for l in self._rows[sn].keys():
+                self._cow_rows[sn][l]=len(self._rows[sn][l])
+        tots = self._stats.sum(axis=0)
+        stop_at = self.split_ratios.reshape((-1,1)) * tots
+        stop_at[0] = tots # put all scraps in training
+        # init bags for splits
+        bags = [] # bag-0, bag-1, etc.
+        for i in range(self.num_splits):
+            bags.append([])
+        # no grouping? always use the same bag
+        if (self.split_ncols == 0):
+            bags = [[]] * self.num_splits
+        # insert patches into bags until they're full
+        cows = np.zeros([self.num_splits, self.num_classes])
+        curr = 0 # current bag
+        for (i, p_num) in enumerate(self._stats):
+            # check if current bag can hold the sample set, if not increment bag
+            # note: bag-0 (training) can always contain a sample set
+            while ((cows[curr]+p_num)>stop_at[curr]).any():
+                curr += 1; curr %= self.num_splits
+            bags[curr] += [i]
+            cows[curr] += p_num
+            curr += 1; curr %= self.num_splits
+        # save bags
+        self._bags = bags
+    def _enough_rows(self, sp, sample_num, lab):
+        """ Are there other rows available, given bag/sample/label?
+
+        :param sp: split/bag
+        :param sample_num: group number
+        :param lab: label
+        :returns: 
+        :rtype: 
+
+        """
+        bag = self._bags[sp]
+        sample_name = self.sample_names[bag[sample_num]]
+        num = self._cow_rows[sample_name][lab]
+        return (num>0)
+    def _find_row(self, sp, sample_num, lab):
+        """ Returns a group/sample which contains a row with a given label
+
+        :param sp: split/bag
+        :param sample_num: starting group number
+        :param lab: required label
+        :returns: 
+        :rtype: 
+
+        """
+        max_sample = len(self._bags[sp])
+        cur_sample = sample_num
+        inc = 0
+        while (inc<max_sample and not self._enough_rows(sp, cur_sample, lab)):
+            cur_sample +=1; cur_sample %= max_sample
+            inc += 1
+        if (inc>=max_sample): # row not found
+            cur_sample = -1 
+        return cur_sample
+    def _fill_splits(self):
+        """ Insert into the splits, taking into account the target class balance
+
+        :returns: 
+        :rtype: 
+
+        """
+        borders = self.max_patches * self.split_ratios.cumsum()
+        borders = borders.round().astype(int)
+        borders = np.pad(borders, [1,0])
+        max_split = [borders[i+1]-borders[i] for i in range(self.num_splits)]
+        sp_rows = []
+        pbar = tqdm(desc='Choosing patches', total=self.max_patches)
+        for sp in range(self.num_splits): # for each split
+            sp_rows.append([])
+            max_sample = len(self._bags[sp])
+            tmp = max_split[sp] * self.balance.cumsum()
+            tmp = tmp.round().astype(int)
+            tmp = np.pad(tmp, [1,0])
+            max_class = [tmp[i+1]-tmp[i] for i in range(tmp.shape[0]-1)]
+            for cl in range(self.num_classes): # fill with each class
+                cur_sample = 0
+                tot = 0
+                while (tot<max_class[cl]):
+                    if (not self._enough_rows(sp, cur_sample, self.labs[cl])):
+                        cur_sample = self._find_row(sp, cur_sample, self.labs[cl])
+                    if (cur_sample<0): # not found, skip to next class
+                        break
+                    bag = self._bags[sp]
+                    sample_name = self.sample_names[bag[cur_sample]]
+                    self._cow_rows[sample_name][self.labs[cl]] -= 1
+                    idx = self._cow_rows[sample_name][self.labs[cl]]
+                    row = self._rows[sample_name][self.labs[cl]][idx]
+                    sp_rows[sp].append(row)
+                    tot+=1
+                    cur_sample +=1; cur_sample %= max_sample
+                    pbar.update(1)
+        pbar.close()
+        # build common sample list
+        self.split = []
+        self.row_keys = []
+        start = 0
+        for sp in range(self.num_splits):
+            self.split.append(None)
+            sz = len(sp_rows[sp])
+            random.shuffle(sp_rows[sp])
+            self.row_keys += sp_rows[sp]
+            self.split[sp] = np.arange(start, start+sz)
+            start += sz
+        self.row_keys = np.array(self.row_keys)
+        self.n = self.row_keys.shape[0] # set size
     def split_setup(self, max_patches=None, split_ratios=None,
                     balance=None, seed=None):
         """(Re)Insert the patches in the splits, according to split and class ratios
@@ -341,90 +463,10 @@ class CassandraListManager():
         self._update_target_params(max_patches=max_patches,
                                    split_ratios=split_ratios,
                                    balance=balance)
-        ## partitioning sample names in training, validation and test
-        # init counter per each partition
-        cow_rows = {}
-        for sn in self._rows.keys():
-            cow_rows[sn]={}
-            for l in self._rows[sn].keys():
-                cow_rows[sn][l]=len(self._rows[sn][l])
-        tots = self._stats.sum(axis=0)
-        stop_at = self.split_ratios.reshape((-1,1)) * tots
-        stop_at[0] = tots # put all scraps in training
-        # insert patches into bags until they're full
-        bags = [] # bag-0, bag-1, etc.
-        for i in range(self.num_splits):
-            bags.append([])
-        cows = np.zeros([self.num_splits, self.num_classes])
-        curr = 0 # current bag
-        for (i, p_num) in enumerate(self._stats):
-            # check if current bag can hold the sample set, if not increment bag
-            # note: bag-0 (training) can always contain a sample set
-            while ((cows[curr]+p_num)>stop_at[curr]).any():
-                curr += 1; curr %= self.num_splits
-            bags[curr] += [i]
-            cows[curr] += p_num
-            curr += 1; curr %= self.num_splits
-        ## insert into the splits, taking into account the target class balance
-        borders = self.max_patches * self.split_ratios.cumsum()
-        borders = borders.round().astype(int)
-        borders = np.pad(borders, [1,0])
-        max_split = [borders[i+1]-borders[i] for i in range(self.num_splits)]
-        def enough_rows(sp, sample_num, lab):
-            bag = bags[sp]
-            sample_name = self.sample_names[bag[sample_num]]
-            num = cow_rows[sample_name][lab]
-            return (num>0)
-        def find_row(sp, sample_num, lab):
-            max_sample = len(bags[sp])
-            cur_sample = sample_num
-            inc = 0
-            while (inc<max_sample and not enough_rows(sp, cur_sample, lab)):
-                   cur_sample +=1; cur_sample %= max_sample
-                   inc += 1
-            if (inc>=max_sample): # row not found
-                   cur_sample = -1 
-            return cur_sample
-        sp_rows = []
-        pbar = tqdm(desc='Choosing patches', total=self.max_patches)
-        for sp in range(self.num_splits): # for each split
-            sp_rows.append([])
-            max_sample = len(bags[sp])
-            tmp = max_split[sp] * self.balance.cumsum()
-            tmp = tmp.round().astype(int)
-            tmp = np.pad(tmp, [1,0])
-            max_class = [tmp[i+1]-tmp[i] for i in range(tmp.shape[0]-1)]
-            for cl in range(self.num_classes):
-                cur_sample = 0
-                tot = 0
-                while (tot<max_class[cl]):
-                    if (not enough_rows(sp, cur_sample, self.labs[cl])):
-                        cur_sample = find_row(sp, cur_sample, self.labs[cl])
-                    if (cur_sample<0): # not found, skip to next class
-                        break
-                    bag = bags[sp]
-                    sample_name = self.sample_names[bag[cur_sample]]
-                    cow_rows[sample_name][self.labs[cl]] -= 1
-                    idx = cow_rows[sample_name][self.labs[cl]]
-                    row = self._rows[sample_name][self.labs[cl]][idx]
-                    sp_rows[sp].append(row)
-                    tot+=1
-                    cur_sample +=1; cur_sample %= max_sample
-                    pbar.update(1)
-        pbar.close()
-        # build common sample list
-        self.split = []
-        self.row_keys = []
-        start = 0
-        for sp in range(self.num_splits):
-            self.split.append(None)
-            sz = len(sp_rows[sp])
-            random.shuffle(sp_rows[sp])
-            self.row_keys += sp_rows[sp]
-            self.split[sp] = np.arange(start, start+sz)
-            start += sz
-        self.row_keys = np.array(self.row_keys)
-        self.n = self.row_keys.shape[0] # set size
+        # divide groups into bags (saved as self._bags)
+        self._split_groups()
+        # fill splits from bags
+        self._fill_splits()
 
 ## ecvl reader for Cassandra
 class CassandraDataset():
@@ -694,6 +736,20 @@ class CassandraDataset():
 
         """
         self.batch_size = bs
+        self._reset_indexes()
+    def set_augmentations(self, augs):
+        """Change used augmentations
+
+        :param augs: Data augmentations to be used.
+        :returns: 
+        :rtype: 
+
+        """
+        # update augmentations, default: []
+        if (augs is not None):
+            self.augs=augs
+        if (self.augs is None):
+            self.augs=[]
         self._reset_indexes()
     def rewind_splits(self, chosen_split=None, shuffle=False):
         """Rewind/reshuffle rows in chosen split and reset its current index
