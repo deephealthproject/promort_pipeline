@@ -326,19 +326,12 @@ class CassandraListManager():
     def _split_groups(self):
         """partitioning groups of images in bags
 
-        :returns: 
+        :returns: nothing. bags are saved in self._bags
         :rtype: 
 
         """
-        # init counter per each partition
-        self._cow_rows = {}
-        for sn in self._rows.keys():
-            self._cow_rows[sn]={}
-            for l in self._rows[sn].keys():
-                self._cow_rows[sn][l]=len(self._rows[sn][l])
         tots = self._stats.sum(axis=0)
         stop_at = self.split_ratios.reshape((-1,1)) * tots
-        stop_at[0] = tots # put all scraps in training
         # init bags for splits
         bags = [] # bag-0, bag-1, etc.
         for i in range(self.num_splits):
@@ -348,12 +341,16 @@ class CassandraListManager():
             bags = [[]] * self.num_splits
         # insert patches into bags until they're full
         cows = np.zeros([self.num_splits, self.num_classes])
-        curr = 0 # current bag
+        curr = random.randint(0, self.num_splits-1) # start with random bag
         for (i, p_num) in enumerate(self._stats):
+            skipped = 0
             # check if current bag can hold the sample set, if not increment bag
-            # note: bag-0 (training) can always contain a sample set
-            while ((cows[curr]+p_num)>stop_at[curr]).any():
+            while (((cows[curr]+p_num)>stop_at[curr]).any() and
+                   skipped<self.num_splits):
+                skipped += 1
                 curr += 1; curr %= self.num_splits
+            if (skipped==self.num_splits): # if not found choose a random one
+                curr = random.randint(0, self.num_splits-1)
             bags[curr] += [i]
             cows[curr] += p_num
             curr += 1; curr %= self.num_splits
@@ -399,6 +396,12 @@ class CassandraListManager():
         :rtype: 
 
         """
+        # init counter per each partition
+        self._cow_rows = {}
+        for sn in self._rows.keys():
+            self._cow_rows[sn]={}
+            for l in self._rows[sn].keys():
+                self._cow_rows[sn][l]=len(self._rows[sn][l])
         borders = self.max_patches * self.split_ratios.cumsum()
         borders = borders.round().astype(int)
         borders = np.pad(borders, [1,0])
@@ -444,7 +447,7 @@ class CassandraListManager():
         self.row_keys = np.array(self.row_keys)
         self.n = self.row_keys.shape[0] # set size
     def split_setup(self, max_patches=None, split_ratios=None,
-                    balance=None, seed=None):
+                    balance=None, seed=None, bags=None):
         """(Re)Insert the patches in the splits, according to split and class ratios
 
         :param max_patches: Number of patches to be read. If None use the current value.
@@ -464,7 +467,10 @@ class CassandraListManager():
                                    split_ratios=split_ratios,
                                    balance=balance)
         # divide groups into bags (saved as self._bags)
-        self._split_groups()
+        if (bags):
+            self._bags = bags
+        else:
+            self._split_groups()
         # fill splits from bags
         self._fill_splits()
 
@@ -663,7 +669,7 @@ class CassandraDataset():
         # create a lock per split
         self.locks=[threading.Lock() for i in range(self.num_splits)]
     def split_setup(self, max_patches=None, split_ratios=None, augs=None,
-                    balance=None, batch_size=None, seed=None):
+                    balance=None, batch_size=None, seed=None, bags=None):
         """(Re)Insert the patches in the splits, according to split and class ratios
 
         :param max_patches: Number of patches to be read. If None use the current value.
@@ -678,7 +684,7 @@ class CassandraDataset():
         """
         self._clm.split_setup(max_patches=max_patches,
                               split_ratios=split_ratios,
-                              balance=balance, seed=seed)
+                              balance=balance, seed=seed, bags=bags)
         self.row_keys = self._clm.row_keys
         self.split = self._clm.split
         self.n = self._clm.n
