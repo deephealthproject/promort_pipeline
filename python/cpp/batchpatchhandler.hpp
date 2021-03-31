@@ -35,6 +35,7 @@ private:
   string username;
   string password;
   vector<string> cassandra_ips;
+  string s_cassandra_ips;
   int port = 9042;
   // Cassandra connection and execution
   CassCluster* cluster = cass_cluster_new();

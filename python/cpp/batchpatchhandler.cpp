@@ -15,8 +15,7 @@ BatchPatchHandler::~BatchPatchHandler(){
 }
 
 void BatchPatchHandler::connect(){
-  // FIXME: now using only first cassandra server
-  cass_cluster_set_contact_points(cluster, cassandra_ips[0].c_str());
+  cass_cluster_set_contact_points(cluster, s_cassandra_ips.c_str());
   cass_cluster_set_credentials(cluster, username.c_str(), password.c_str());
   cass_cluster_set_port(cluster, port);
   cass_cluster_set_protocol_version(cluster, CASS_PROTOCOL_VERSION_V4);
@@ -40,12 +39,18 @@ BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
   data_col(data_col), id_col(id_col), username(username),
   password(cass_pass), cassandra_ips(cassandra_ips), port(port)
 {
+  // join cassandra ip's into comma seperated string
+  s_cassandra_ips =
+    accumulate(cassandra_ips.begin(), cassandra_ips.end(), string(), 
+	       [](const string& a, const string& b) -> string { 
+		 return a + (a.length() > 0 ? "," : "") + b; 
+	       } );
   // set multi-label or not
   multi_label = (num_classes>_max_multilabs) ? false : true;
   // connect to cluster and init session
   connect();
   // assemble query
-  std::stringstream ss;
+  stringstream ss;
   ss << "SELECT " << label_col << ", " << data_col <<
     " FROM " << table << " WHERE " << id_col << "=?" << endl;
   string query = ss.str();
@@ -63,9 +68,9 @@ BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
 }
 
 vector<char> BatchPatchHandler::file2buf(string filename){
-  ifstream file(filename, std::ios::binary | std::ios::ate);
+  ifstream file(filename, ios::binary | ios::ate);
   streamsize size = file.tellg();
-  file.seekg(0, std::ios::beg);
+  file.seekg(0, ios::beg);
   vector<char> buffer(size);
   if (file.read(buffer.data(), size)){
     file.close();
