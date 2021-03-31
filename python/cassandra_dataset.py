@@ -351,7 +351,7 @@ class CassandraListManager():
                 curr += 1; curr %= self.num_splits
             if (skipped==self.num_splits): # if not found choose a random one
                 curr = random.randint(0, self.num_splits-1)
-            bags[curr] += [i]
+            bags[curr] += [self.sample_names[i]]
             cows[curr] += p_num
             curr += 1; curr %= self.num_splits
         # save bags
@@ -367,7 +367,7 @@ class CassandraListManager():
 
         """
         bag = self._bags[sp]
-        sample_name = self.sample_names[bag[sample_num]]
+        sample_name = bag[sample_num]
         num = self._cow_rows[sample_name][lab]
         return (num>0)
     def _find_row(self, sp, sample_num, lab):
@@ -410,7 +410,8 @@ class CassandraListManager():
         pbar = tqdm(desc='Choosing patches', total=self.max_patches)
         for sp in range(self.num_splits): # for each split
             sp_rows.append([])
-            max_sample = len(self._bags[sp])
+            bag = self._bags[sp]
+            max_sample = len(bag)
             tmp = max_split[sp] * self.balance.cumsum()
             tmp = tmp.round().astype(int)
             tmp = np.pad(tmp, [1,0])
@@ -423,8 +424,7 @@ class CassandraListManager():
                         cur_sample = self._find_row(sp, cur_sample, self.labs[cl])
                     if (cur_sample<0): # not found, skip to next class
                         break
-                    bag = self._bags[sp]
-                    sample_name = self.sample_names[bag[cur_sample]]
+                    sample_name = bag[cur_sample]
                     self._cow_rows[sample_name][self.labs[cl]] -= 1
                     idx = self._cow_rows[sample_name][self.labs[cl]]
                     row = self._rows[sample_name][self.labs[cl]][idx]
