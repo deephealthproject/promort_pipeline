@@ -62,8 +62,8 @@ def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=Fa
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
         #eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
-        #eddl.CS_GPU(gpus, mem="low_mem", lsb=lsb) if gpus else eddl.CS_CPU()
-        eddl.CS_GPU(gpus, mem="low_mem") if gpus else eddl.CS_CPU()
+        eddl.CS_GPU(gpus, mem="low_mem", lsb=lsb) if gpus else eddl.CS_CPU()
+        #eddl.CS_GPU(gpus, mem="low_mem") if gpus else eddl.CS_CPU()
         )
 
     eddl.summary(net)
@@ -329,6 +329,6 @@ if __name__ == "__main__":
                         help="Filename of the .bin file with initial parameters of the network")
     parser.add_argument("--splits-fn", metavar="STR", required=True,
                         help="Pickle file with cassandra splits")
-    parser.add_argument("--cassandra-pwd-fn", metavar="STR",
+    parser.add_argument("--cassandra-pwd-fn", metavar="STR", default='/tmp/cassandra_pass.txt',
                         help="cassandra password")
     main(parser.parse_args())
