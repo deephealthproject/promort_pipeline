@@ -18,13 +18,12 @@ from tissue_detector import tissue_detector as td
 # /spark/bin/pyspark --conf spark.cores.max=24 --conf spark.default.parallelism=24 --master spark://spark-master:7077
 #
 ## Run program
-# /spark/bin/spark-submit --conf spark.cores.max=24 --conf spark.default.parallelism=24 run.py
+# /spark/bin/spark-submit --conf spark.cores.max=4 --conf spark.default.parallelism=4 --py-files tissue_detector.py,LSVM_tissue_bg_model_promort.pickle tissue_masks.py
 
 
 def tissue_kernel(scale=64) :
     def ret(arg_list) :
-        t_dec = td(model_fn='LSVM_tissue_bg_model_promort.pickle',
-                   gpu=False, th=0.8)
+        t_dec = td(model_fn='LSVM_tissue_bg_model_promort.pickle', th=0.8)
         for args in arg_list:
             slide, tissuedir, basename, suf = args
             print(slide, tissuedir, basename, suf)
@@ -43,7 +42,7 @@ def tissue_kernel(scale=64) :
             img = img.convert('RGB').resize((nx,ny))
             # convert to np array, apply classifier and convert back to PIL.Image
             ar = np.asarray(img)
-            t_mask = t_dec.get_tissue_mask(ar, channel_first=False)
+            t_mask = t_dec.get_tissue_mask(ar)
             outname = os.path.join(tissuedir, basename + f'_{suf}.png')
             t_img = Image.fromarray(t_mask).convert('L')
             t_img.save(outname)
