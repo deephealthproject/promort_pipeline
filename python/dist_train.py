@@ -13,7 +13,7 @@ import numpy as np
 import os
 
 # Run with
-# /spark/bin/spark-submit --py-files cassandra_dataset.py,BPH.cpython-36m-x86_64-linux-gnu.so,/home/cesco/code/tmp/inet_256_rows.pckl --conf spark.cores.max=10 dist_train.py --num 10
+# /spark/bin/spark-submit --py-files cassandra_dataset.py,BPH.cpython-36m-x86_64-linux-gnu.so,/home/cesco/code/tmp/inet_256_rows.pckl --conf spark.cores.max=10 dist_train.py --nodes 10
 
 def train(inet_pass, num, init_val, seed=123):
     def ret(i):
