@@ -519,6 +519,8 @@ class CassandraDataset():
         self.split = None
         self.num_splits = None
         self._clm = None # Cassandra list manager
+    def __del__(self):
+        self._ignore_batches()
     def init_listmanager(self, table, partition_cols, id_col,
                          split_ncols=1, num_classes=2, metatable=None):
         """Initialize the Cassandra list manager.
