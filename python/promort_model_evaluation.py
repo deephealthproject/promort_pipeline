@@ -136,17 +136,17 @@ def main(args):
     pbar = tqdm(range(num_batches))
 
     for b_index, b in enumerate(pbar):
-        ids = rows[indexes-cd.batch_size:indexes] 
-        
         n = 0
         x, y = cd.load_batch()
+        x_dim = x.getShape()[0]
         x.div_(255.0)
         eddl.forward(net, [x])
         output = eddl.getOutput(out)
         
         sum_ = 0.0
+        ids = rows[indexes-x_dim:indexes] 
         
-        for k in range(x.getShape()[0]):
+        for k in range(x_dim):
             result = output.select([str(k)])
             target = y.select([str(k)])
             ca = metric.value(target, result)
