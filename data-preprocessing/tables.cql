@@ -144,3 +144,83 @@ CREATE TABLE promort.metadata_0(
   patch_id uuid,
   PRIMARY KEY ((patch_id))
 );
+
+
+
+/// all tissue
+
+///// level 1
+
+// DROP TABLE promort.ids_cosk_all_1; DROP TABLE promort.data_cosk_all_1; DROP TABLE promort.metadata_cosk_all_1;
+// TRUNCATE TABLE promort.ids_cosk_all_1; TRUNCATE TABLE promort.data_cosk_all_1; TRUNCATE TABLE promort.metadata_cosk_all_1;
+
+
+// Mapping patch metadata to data via uuid
+CREATE TABLE promort.ids_cosk_all_1(
+  sample_name text, // AN1234
+  sample_rep int, // 5
+  x int, 
+  y int,
+  label int,
+  patch_id uuid,
+  tissue float,
+  PRIMARY KEY ((sample_name, sample_rep, label), x, y)
+);
+
+// Mapping patch uuid to data and label
+CREATE TABLE promort.data_cosk_all_1(
+  patch_id uuid,
+  label int,
+  data blob,
+  PRIMARY KEY ((patch_id))
+);
+
+// Mapping patch uuid to metadata
+CREATE TABLE promort.metadata_cosk_all_1(
+  sample_name text, // AN1234
+  sample_rep int, // 5
+  x int, 
+  y int,
+  label int,
+  patch_id uuid,
+  tissue float,
+  PRIMARY KEY ((patch_id))
+);
+
+///// level 2
+
+// DROP TABLE promort.ids_cosk_all_2; DROP TABLE promort.data_cosk_all_2; DROP TABLE promort.metadata_cosk_all_2;
+// TRUNCATE TABLE promort.ids_cosk_all_2; TRUNCATE TABLE promort.data_cosk_all_2; TRUNCATE TABLE promort.metadata_cosk_all_2;
+
+
+// Mapping patch metadata to data via uuid
+CREATE TABLE promort.ids_cosk_all_2(
+  sample_name text, // AN1234
+  sample_rep int, // 5
+  x int, 
+  y int,
+  label int,
+  patch_id uuid,
+  tissue float,
+  PRIMARY KEY ((sample_name, sample_rep, label), x, y)
+);
+
+// Mapping patch uuid to data and label
+CREATE TABLE promort.data_cosk_all_2(
+  patch_id uuid,
+  label int,
+  data blob,
+  PRIMARY KEY ((patch_id))
+);
+
+// Mapping patch uuid to metadata
+CREATE TABLE promort.metadata_cosk_all_2(
+  sample_name text, // AN1234
+  sample_rep int, // 5
+  x int, 
+  y int,
+  label int,
+  patch_id uuid,
+  tissue float,
+  PRIMARY KEY ((patch_id))
+);
