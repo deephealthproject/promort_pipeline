@@ -16,6 +16,7 @@ import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
 import models
+import pickle
 
 # Run with
 # /spark/bin/spark-submit --py-files cassandra_dataset.py,BPH.cpython-36m-x86_64-linux-gnu.so,/home/cesco/code/tmp/inet_256_rows.pckl,/DeepHealth/git/promort_pipeline/python/models.py --conf spark.cores.max=10 imagenet_spark_cass.py --nodes 10 --init-weights-fn /DeepHealth/git/promort_pipeline/python/keras/vgg16_imagenet_init.bin
@@ -85,24 +86,30 @@ def train(inet_pass, num, init_weights, lr, augs_on, gpus, lsb, dropout,l2_reg, 
         net_init = eddl.HeNormal
         net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=lr, augs=augs_on, gpus=gpus, lsb=lsb, init=net_init, dropout=dropout, l2_reg=l2_reg)
         out = net.layers[-1]
-        
+       
+        # Load or set weights 
         if isinstance(init_weights, str):
-            print ("CIAO: %s" % init_weights)
-            #eddl.load(net, init_weights)
+            print ("Loading weitghts into the model")
+            eddl.load(net, init_weights)
         elif init_weights:
-            pass
-            ## FIXME: set_parameters needs the right data. Check it
-            #eddl.set_parameters(net, init_weights)
+            print (init_weights.value)
+            #new_weights = [[Tensor(i) for i in l] for l in init_weights.value]  
+            #eddl.set_parameters(net, new_weights)
 
         ### Here the training code for. Train epochs before sync
         x,y = cd.load_batch(i)
         
-        ## FIXME: maybe get_parameters results has to be transformed to be serialized
-        #r = eddl.get_parameters(net)
-        r = 1
+        p = eddl.get_parameters(net) # Get parameters from the model
+        r = [[i.getdata() for i in l] for l in p] # Transform tensors to numpy array for spark serialization
+ 
         return r
     return ret
-    
+
+
+def average_weights(w0, w1):
+    mean_weights = [[(w0[i][j]+w1[i][j])/2 for j, _ in enumerate(l)] for i, l in enumerate(w0)]
+    return mean_weights
+
 
 def run(args):
     try: 
@@ -146,10 +153,12 @@ def run(args):
         init_weights_bc = sc.broadcast(init_weights)
         data = par_nodes\
             .map(train(inet_pass, num, init_weights_bc, lr, augs_on, gpus, lsb, dropout,l2_reg, seed=123))\
-            .reduce(lambda x,y: x+y)
-        #avg = data/num ## call here the function that compute weights average
-        print(data)
-        #init_weights = init_weigts / 100
+            .reduce(average_weights)
+        
+        # Convert list of numpy weigths to list of tensors
+        init_weights = data
+            
+        pickle.dump(data, open('test.pckl', 'wb'))
 
 if __name__ == "__main__":        
     parser = argparse.ArgumentParser(description=__doc__)
