@@ -1,6 +1,7 @@
 import argparse
 from cassandra.auth import PlainTextAuthProvider
 from cassandra_dataset import CassandraDataset
+from envloader import EnvLoader
 from getpass import getpass
 from pyspark import StorageLevel
 from pyspark.conf import SparkConf
@@ -13,19 +14,18 @@ import numpy as np
 import os
 
 # Run with
-# /spark/bin/spark-submit --py-files cassandra_dataset.py,BPH.cpython-36m-x86_64-linux-gnu.so,/home/cesco/code/tmp/inet_256_rows.pckl --conf spark.cores.max=10 dist_train.py --nodes 10
+# /spark/bin/spark-submit --py-files cassandra_dataset.py,envloader.py,BPH.cpython-36m-x86_64-linux-gnu.so,/home/cesco/code/tmp/inet_256_rows.pckl,/home/cesco/code/tmp/inet_256_10_splits.pckl dist_train.py
 
-def train(inet_pass, num, init_val, seed=123):
+
+def train(cl, num, init_val, indexes, seed=123):
     def ret(i):
-        ap = PlainTextAuthProvider(username='inet', password=inet_pass)
-        cd = CassandraDataset(ap, ['cassandra_db'], port=9042, seed=seed)
-        cd.load_rows('inet_256_rows.pckl')
-        cd.init_datatable(table='imagenet.data_256')
-        cd.split_setup(batch_size=32, split_ratios=[1]*num,
-                       max_patches=1300000, augs=[])
+        cl.value.start()
+        cd = cl.value.cd
+        cd.set_indexes(indexes)
         x,y = cd.load_batch(i)
         r = x.getdata()[0,0,0,0]
         r *= init_val.value
+        print(cd.current_index)
         return r
     return ret
     
@@ -47,10 +47,12 @@ def run(args):
     
     nodes = range(num)
     par_nodes = sc.parallelize(nodes, numSlices=num)
-    for ep in range(5):
+    cl = sc.broadcast(EnvLoader(inet_pass, num))
+    for ep in range(30):
         init_val = sc.broadcast(w)
+        indexes = list(range(0,num*10,10))
         data = par_nodes\
-            .map(train(inet_pass, num, init_val))\
+            .map(train(cl, num, init_val, indexes))\
             .reduce(lambda x,y: x+y)
         avg = data/num
         print(avg)
@@ -58,6 +60,6 @@ def run(args):
 
 if __name__ == "__main__":        
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--nodes", type=int, metavar="INT", default=3,
+    parser.add_argument("--nodes", type=int, metavar="INT", default=2,
                         help='Number of nodes')
     run(parser.parse_args())

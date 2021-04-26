@@ -512,6 +512,7 @@ class CassandraDataset():
         self.batch_size = None
         self.current_split = 0
         self.current_index = []
+        self.previous_index = []
         self.batch_handler = []
         self.num_batches = []
         self.locks = None
@@ -711,10 +712,12 @@ class CassandraDataset():
         self._ignore_batches()
                             
         self.current_index = []
+        self.previous_index = []
         self.batch_handler = []
         self.num_batches = []
         for cs in range(self.num_splits):
             self.current_index.append(0)
+            self.previous_index.append(0)
             # set up handlers with augmentations
             if (len(self.augs)>cs):
                 aug = self.augs[cs]
@@ -792,12 +795,21 @@ class CassandraDataset():
     def _compute_batch(self, cs):
         hand = self.batch_handler[cs]
         return(hand.block_get_batch())
+    def set_indexes(self, idx):
+        if (len(idx)!=self.num_splits):
+            raise ValueError(f'Length of indexes should be {self.num_splits}')
+        self._ignore_batches()
+        self.current_index = idx
+        for cs in range(self.num_splits):
+            self._preload_batch(cs)
     def _preload_batch(self, cs):
         if (self.current_index[cs]>=self.split[cs].shape[0]):
+            self.previous_index[cs] = self.current_index[cs] # save old index
             self.current_index[cs]+=1 # register overflow
             return # end of split, stop prealoding
         idx_ar = self.split[cs][self.current_index[cs] :
                                 self.current_index[cs] + self.batch_size]
+        self.previous_index[cs] = self.current_index[cs] # save old index
         self.current_index[cs] += idx_ar.size #increment index
         bb = self.row_keys[idx_ar]
         self._save_futures(bb, cs)
