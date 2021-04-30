@@ -1,0 +1,45 @@
+#include <iostream>
+#include "miniMPI.hpp"
+
+miniMPI::miniMPI(){
+  int h_len;
+  char hostname[MPI_MAX_PROCESSOR_NAME];
+  MPI_Init(NULL, NULL);
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
+  MPI_Get_processor_name(hostname, &h_len);
+  mpi_hostname = hostname;
+  cout << "Hello from " << mpi_hostname << ", rank " <<
+    mpi_rank << " of " << mpi_size << endl;
+  div = 1/(static_cast<float>(mpi_size));
+}
+
+miniMPI::~miniMPI(){
+  MPI_Finalize();
+}
+
+void miniMPI::LoLAverage(LoL& input, LoL& output){
+  for (size_t lev=0; lev!=input.size(); ++lev){
+    auto in = input[lev];
+    auto out = output[lev];
+    for (size_t idx=0; idx<in.size(); ++idx){
+      auto np_in = in[idx];
+      auto np_out = out[idx];
+      auto buf_in = np_in.request();
+      auto buf_out = np_out.request();
+      float* ptr_in = static_cast<float *>(buf_in.ptr);
+      float* ptr_out = static_cast<float *>(buf_out.ptr);
+      size_t sz = np_in.size();
+      MPI_Allreduce(ptr_in, ptr_out, sz, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+      ptr_out = static_cast<float *>(buf_out.ptr);
+      for(size_t i=0; i<sz; ++i)
+	*(ptr_out++) *= div;
+    }
+  }
+}
+
+void miniMPI::Barrier(){
+  MPI_Barrier(MPI_COMM_WORLD);
+}
+
+
