@@ -17,10 +17,11 @@ typedef vector<vector<py::array_t<float, py::array::c_style | py::array::forceca
 
 class miniMPI{
 public:
-  miniMPI();
+  miniMPI(int bl=512);
   ~miniMPI();
   int mpi_rank;
   int mpi_size;
+  size_t mpi_block;
   string mpi_hostname;
   float div;
   void Barrier();

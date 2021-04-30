@@ -7,7 +7,7 @@ using namespace pybind11::literals;
 
 PYBIND11_MODULE(MMPI, m) {
   py::class_<miniMPI>(m, "miniMPI")
-    .def(py::init())
+    .def(py::init<int>(), "bl"_a=512)
     .def_readonly("mpi_rank", &miniMPI::mpi_rank)
     .def_readonly("mpi_size", &miniMPI::mpi_size)
     .def_readonly("mpi_hostname", &miniMPI::mpi_hostname)

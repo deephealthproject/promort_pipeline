@@ -1,7 +1,7 @@
 #include <iostream>
 #include "miniMPI.hpp"
 
-miniMPI::miniMPI(){
+miniMPI::miniMPI(int bl){
   int h_len;
   char hostname[MPI_MAX_PROCESSOR_NAME];
   MPI_Init(NULL, NULL);
@@ -12,6 +12,7 @@ miniMPI::miniMPI(){
   cout << "Hello from " << mpi_hostname << ", rank " <<
     mpi_rank << " of " << mpi_size << endl;
   div = 1/(static_cast<float>(mpi_size));
+  mpi_block = bl*1024;
 }
 
 miniMPI::~miniMPI(){
@@ -30,10 +31,21 @@ void miniMPI::LoLAverage(LoL& input, LoL& output){
       float* ptr_in = static_cast<float *>(buf_in.ptr);
       float* ptr_out = static_cast<float *>(buf_out.ptr);
       size_t sz = np_in.size();
-      MPI_Allreduce(ptr_in, ptr_out, sz, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
-      ptr_out = static_cast<float *>(buf_out.ptr);
-      for(size_t i=0; i<sz; ++i)
-	*(ptr_out++) *= div;
+      size_t block = mpi_block;
+      size_t mits = sz/block + 1;
+      size_t rem = sz%block;
+      // blocked all_reduce + rescale
+      for (size_t mit=0; mit<mits; ++mit){
+	// if last block go through reminder
+	if (mit==mits-1)
+	  block = rem;
+	float* out_beg = ptr_out; // save beginning of block
+	MPI_Allreduce(ptr_in, ptr_out, block, MPI_FLOAT,
+		      MPI_SUM, MPI_COMM_WORLD);
+	ptr_out = out_beg; // rewind block of output
+	for(size_t i=0; i<block; ++i)
+	  *(ptr_out++) *= div; // rescale
+      }
     }
   }
 }
