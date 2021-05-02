@@ -54,4 +54,20 @@ void miniMPI::Barrier(){
   MPI_Barrier(MPI_COMM_WORLD);
 }
 
+void miniMPI::LoLBcast(LoL& data, int root){
+  for (auto lev=data.begin(); lev!=data.end(); ++lev){
+    for (auto np=lev->begin(); np!=lev->end(); ++np){
+      auto buf = np->request();
+      float* d_ptr = static_cast<float *>(buf.ptr);
+      size_t sz = np->size();
+      MPI_Bcast(d_ptr, sz, MPI_FLOAT, root, MPI_COMM_WORLD);
+    }
+  }
+}
 
+void miniMPI::Gather(float x, cpyar& ret, int root){
+  auto buf = ret.request();
+  auto d_ptr = buf.ptr;
+  MPI_Gather(&x, 1, MPI_FLOAT, d_ptr, mpi_size, MPI_FLOAT,
+	     root, MPI_COMM_WORLD);
+}

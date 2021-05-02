@@ -12,8 +12,10 @@ namespace py = pybind11;
 
 #include <mpi.h>
 
-// list of lists of numpy array, densely packed in C style
-typedef vector<vector<py::array_t<float, py::array::c_style | py::array::forcecast>>> LoL;
+// numpy array of floats, densely packed in C style
+typedef py::array_t<float, py::array::c_style> cpyar;
+// list of lists of numpy arrays
+typedef vector<vector<cpyar>> LoL;
 
 class miniMPI{
 public:
@@ -25,6 +27,8 @@ public:
   string mpi_hostname;
   float div;
   void Barrier();
+  void Gather(float x, cpyar& ret, int root=0);
+  void LoLBcast(LoL& data, int root=0);
   void LoLAverage(LoL& input, LoL& output);
 };
 #endif
