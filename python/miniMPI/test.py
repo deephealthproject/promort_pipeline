@@ -25,13 +25,15 @@ def main(bl):
         a = 0.2
 
     b = MP.Allreduce(a, 'MIN')
-    print (a,b)
+    print ('MIN', a,b)
     b = MP.Allreduce(a, 'MAX')
-    print (a,b)
+    print ('MAX', a,b)
     b = MP.Allreduce(a, 'SUM')
-    print (a,b)
+    print ('SUM', a,b)
+    b = MP.Allreduce(a)
+    print ('SUM', a,b)
     b = MP.Allreduce(a, 'PROD')
-    print (a,b)
+    print ('PROD', a,b)
 
     MP.Barrier()
     for _ in range(30):
