@@ -19,6 +19,18 @@ miniMPI::~miniMPI(){
   MPI_Finalize();
 }
 
+float miniMPI::Allreduce(float input, string op){
+  MPI_Op mpi_op;
+  mpi_op = MPI_SUM;
+  if (op == "MIN") mpi_op = MPI_MIN; else
+  if (op == "MAX") mpi_op = MPI_MAX; else
+  if (op == "PROD") mpi_op = MPI_PROD; 
+  
+  float* output = new(float);
+  MPI_Allreduce(&input, output, sizeof(float), MPI_FLOAT, mpi_op, MPI_COMM_WORLD);
+  return *output;
+}
+
 void miniMPI::LoLAverage(LoL& input, LoL& output){
   for (size_t lev=0; lev!=input.size(); ++lev){
     auto in = input[lev];

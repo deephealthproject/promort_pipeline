@@ -30,5 +30,6 @@ public:
   void Gather(float x, cpyar& ret, int root=0);
   void LoLBcast(LoL& data, int root=0);
   void LoLAverage(LoL& input, LoL& output);
+  float Allreduce(float input, string op="SUM");
 };
 #endif

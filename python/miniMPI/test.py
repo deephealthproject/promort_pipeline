@@ -19,6 +19,21 @@ def main(bl):
             a += [np.empty_like(j)]
         y += [a]
     MP.Barrier()
+    if MP.mpi_rank == 0:
+        a = 0.1
+    else:
+        a = 0.2
+
+    b = MP.Allreduce(a, 'MIN')
+    print (a,b)
+    b = MP.Allreduce(a, 'MAX')
+    print (a,b)
+    b = MP.Allreduce(a, 'SUM')
+    print (a,b)
+    b = MP.Allreduce(a, 'PROD')
+    print (a,b)
+
+    MP.Barrier()
     for _ in range(30):
         t0 = time.time()
         MP.LoLAverage(x, y)
