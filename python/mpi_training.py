@@ -13,7 +13,8 @@ import sys
 #sys.path.append('./miniMPI')
 from MMPI import miniMPI
 
-# Run with
+# Run with:
+# mpirun --mca btl tcp,self --bind-to none --mca btl_base_verbose 30 --mca btl_tcp_links 1 -n 2 --hostfile tmp/hostfile  python3 mpi_training.py --ltr 1 --epochs 2 --sync-iterations 2 --batch-size 32 --num-classes 1000 --lr 1e-6 --cass-row-fn /data/code/tmp/inet_256_rows.pckl
 
 def run(args):
     try:

@@ -31,11 +31,6 @@ def acc_weights(acc, w):
     return acc    
 
 
-def mean_weights(w, n):
-    m = [[w[i][j] / n for j, _ in enumerate(l)] for i, l in enumerate(w)]
-    return m    
-
-
 def sync_data(MP, data):
     # Weight lists, ltr losses, ltr metric 
     print("Sync Function")
@@ -45,9 +40,13 @@ def sync_data(MP, data):
     ltr = l.shape[0]
 
     # Averaging Local weights, loss and metric
-    local_weights_avg = mean_weights(w, ltr)
+    local_weights_avg = [[w[i][j] / ltr for j, _ in enumerate(l)] for i, l in enumerate(w)]
     local_loss_avg = float(np.mean(l))
     local_metric_avg = float(np.mean(m))
+
+    t1 = time.time()
+    print("Reduce function: Average of structures time: %.3f" % (t1-t0))
+    t0 = t1
 
     # Global Average of weights, metric and loss 
     glob_weights = [[np.empty_like(local_weights_avg[i][j]) for j, _ in enumerate(l)] for i, l in enumerate(local_weights_avg)]
@@ -58,7 +57,7 @@ def sync_data(MP, data):
     glob_metrics = MP.Allreduce(local_metric_avg, 'SUM')
 
     t1 = time.time()
-    print("Reduce function time: %.3f" % (t1-t0))
+    print("Reduce function: mpi time Communication: %.3f" % (t1-t0))
 
     return (glob_weights, glob_losses, glob_metrics)
 
@@ -156,7 +155,8 @@ def train(MP, ltr, el, init_weights_fn, epochs, sync_iterations, lr, gpus, dropo
                     x.div_(255.0)
                     tx, ty = [x], [y]
                     
-                    #eddl.train_batch(net, tx, ty)
+                    print (f'Train batch rank: {rank}, ep: {e}, macro_batch: {mb}, local training rank: {lt}, inidipendent iteration: {s_it}') 
+                    eddl.train_batch(net, tx, ty)
 
                     loss = eddl.get_losses(net)[0]
                     metric = eddl.get_metrics(net)[0]
