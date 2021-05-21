@@ -30,7 +30,7 @@ float* miniMPI::Allreduce(float input, string op){
     throw std::runtime_error("MPI operator not supported");
   
   float* output = new float;
-  MPI_Allreduce(&input, output, sizeof(float), MPI_FLOAT, mpi_op, MPI_COMM_WORLD);
+  MPI_Allreduce(&input, output, 1, MPI_FLOAT, mpi_op, MPI_COMM_WORLD);
   return output;
 }
 
