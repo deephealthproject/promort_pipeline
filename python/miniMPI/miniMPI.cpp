@@ -1,5 +1,6 @@
 #include <iostream>
 #include "miniMPI.hpp"
+#include <stdexcept>
 
 miniMPI::miniMPI(int bl){
   int h_len;
@@ -19,16 +20,18 @@ miniMPI::~miniMPI(){
   MPI_Finalize();
 }
 
-float miniMPI::Allreduce(float input, string op){
+float* miniMPI::Allreduce(float input, string op){
   MPI_Op mpi_op;
-  mpi_op = MPI_SUM;
+  if (op == "SUM") mpi_op = MPI_SUM;else
   if (op == "MIN") mpi_op = MPI_MIN; else
   if (op == "MAX") mpi_op = MPI_MAX; else
-  if (op == "PROD") mpi_op = MPI_PROD; 
+  if (op == "PROD") mpi_op = MPI_PROD;
+  else
+    throw std::runtime_error("MPI operator not supported");
   
-  float* output = new(float);
-  MPI_Allreduce(&input, output, sizeof(float), MPI_FLOAT, mpi_op, MPI_COMM_WORLD);
-  return *output;
+  float* output = new float;
+  MPI_Allreduce(&input, output, 1, MPI_FLOAT, mpi_op, MPI_COMM_WORLD);
+  return output;
 }
 
 void miniMPI::LoLAverage(LoL& input, LoL& output){

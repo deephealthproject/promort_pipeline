@@ -11,7 +11,7 @@ PYBIND11_MODULE(MMPI, m) {
     .def_readonly("mpi_rank", &miniMPI::mpi_rank)
     .def_readonly("mpi_size", &miniMPI::mpi_size)
     .def_readonly("mpi_hostname", &miniMPI::mpi_hostname)
-    .def("Allreduce", &miniMPI::Allreduce)
+    .def("Allreduce", &miniMPI::Allreduce, "input"_a, "op"_a="SUM")
     .def("LoLAverage", &miniMPI::LoLAverage, "input"_a, "output"_a)
     .def("Gather", &miniMPI::Gather, "x"_a, "ret"_a, "root"_a=0)
     .def("LoLBcast", &miniMPI::LoLBcast, "data"_a, "root"_a=0)
