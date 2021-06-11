@@ -22,7 +22,7 @@ def run(args):
     except ImportError:
         inet_pass = getpass('Insert Cassandra password: ')
 
-    MP = miniMPI()
+    MP = miniMPI(bl=2048)
     
     # Get parameters
     num_nodes = MP.mpi_size # number of nodes
