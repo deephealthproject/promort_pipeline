@@ -17,7 +17,9 @@ PYBIND11_MODULE(OPT_MPI, m) {
        .def("sync_rank_0_parameters", &SGD_mpi::sync_rank_0_parameters);
     
     py::class_<mpi_env>(m, "mpi_env")
-       .def(py::init<int, int>())
+       .def(py::init<int, int>(), py::arg("n_sync")=1, py::arg("bl")=512)
+       .def_readonly("mpi_rank", &mpi_env::mpi_rank)
+       .def_readonly("mpi_size", &mpi_env::mpi_size)
        .def("Barrier", &mpi_env::Barrier)
        .def("Bcast_Tensor", &mpi_env::Bcast_Tensor)
        .def("Allreduce_Tensor", &mpi_env::Allreduce_Tensor);

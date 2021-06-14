@@ -4,7 +4,7 @@ LFLAGS = -L/usr/local/lib/ -L/usr/local/cuda/lib64/ -l cudart  -l ecvl_eddl -l e
 IXXFLAGS = -I/usr/local/include/eddl -I/usr/local/include/ecvl -I/usr/local/cuda/include -I$(SRC_PARENT)
 # All .o files go to build dir.
 BUILD_DIR = ./
-CPP = $(wildcard ../cpp/with_cuda_rt/*.cpp)
+CPP = $(wildcard $(SRC_PARENT)/*.cpp)
 OBJ = $(CPP:%.cpp=$(BUILD_DIR)/%.o)
 OUT = libopt_mpi.so
 
@@ -13,7 +13,7 @@ OUT = libopt_mpi.so
 all: $(OUT)
 
 clean:
-	rm -f *.o $(OUT) 
+	rm -f $(SRC_PARENT)/*.o $(OUT) 
 
 $(OUT): $(OBJ)
 	mpiCC -shared $^ -o $@ $(LFLAGS)
