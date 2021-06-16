@@ -58,3 +58,15 @@ void mpi_env::Allreduce_Tensor(Tensor* t_in){
     delete [] out_ptr_h_start;
     delete [] in_ptr_h;
 }
+
+void mpi_env::Broadcast_params(Net* net){
+    vlayer layers = net->layers;
+    for (unsigned int i = 0; i < layers.size(); i++) {
+        if (layers[i]->trainable) {
+            for (int j = 0; j < layers[i]->get_trainable_params_count(); j++) {
+                Tensor* par = layers[i]->params[j];
+                Bcast_Tensor(par, 0);
+            }
+        }
+    }
+}

@@ -3,6 +3,7 @@
 
 #include <mpi.h>
 #include "eddl/apis/eddl.h"
+#include "eddl/net/net.h"
 #include "cuda.h"
 #include "cuda_runtime.h"
 
@@ -20,6 +21,7 @@ public:
     void Barrier();
     void Bcast_Tensor(Tensor* t_in, int root);
     void Allreduce_Tensor(Tensor* t_in);
+    void Broadcast_params(Net* net);
 };
 
 #endif

@@ -5,8 +5,6 @@ SGD_mpi::SGD_mpi(mpi_env* MPE, float lr, float momentum, float weight_decay, boo
     n_sync = MPE->n_sync;
     count = 0;
      
-    // Broadcast parameters of rank 0 to the other ones
-    sync_rank_0_parameters();
     // Barrier to sync all workers
     MPE->Barrier();
 }
@@ -65,16 +63,6 @@ void SGD_mpi::sync_grads(){
     }
 }
 
-void SGD_mpi::sync_rank_0_parameters(){
-    for (unsigned int i = 0; i < layers.size(); i++) {
-        if (layers[i]->trainable) {
-            for (int j = 0; j < layers[i]->get_trainable_params_count(); j++) {
-                Tensor* par = layers[i]->params[j];
-                MPE->Bcast_Tensor(par, 0);
-            }
-        }
-    }
-}
 
 // High level API
 optimizer sgd_mpi(mpi_env* MPE, float lr, float momentum, float weight_decay, bool nesterov) {
