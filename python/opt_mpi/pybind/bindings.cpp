@@ -17,8 +17,7 @@ PYBIND11_MODULE(OPT_MPI, m) {
        .def(py::init<mpi_env*, float, float, float, bool>())
        .def("clone", &SGD_mpi::clone)
        .def("applygrads", &SGD_mpi::applygrads)
-       .def("sync_grads", &SGD_mpi::sync_grads)
-       .def("sync_rank_0_parameters", &SGD_mpi::sync_rank_0_parameters);
+       .def("sync_grads", &SGD_mpi::sync_grads);
     
     py::class_<mpi_env>(m, "mpi_env")
        .def(py::init<int, int>(), py::arg("n_sync")=1, py::arg("bl")=512)
@@ -26,5 +25,6 @@ PYBIND11_MODULE(OPT_MPI, m) {
        .def_readonly("mpi_size", &mpi_env::mpi_size)
        .def("Barrier", &mpi_env::Barrier)
        .def("Bcast_Tensor", &mpi_env::Bcast_Tensor)
-       .def("Allreduce_Tensor", &mpi_env::Allreduce_Tensor);
+       .def("Allreduce_Tensor", &mpi_env::Allreduce_Tensor)
+       .def("Broadcast_params", &mpi_env::Broadcast_params);
 }
