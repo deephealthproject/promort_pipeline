@@ -10,7 +10,7 @@ import time
 
 def main(bl):
     MP = miniMPI(bl)
-    with open("./vgg16_np_weights.pckl", "rb") as fin:
+    with open("../tmp/vgg16_np_weights.pckl", "rb") as fin:
         x = pickle.load(fin)
     y = []
     for i in x:
@@ -36,7 +36,7 @@ def main(bl):
     print ('PROD', a,b)
 
     MP.Barrier()
-    for _ in range(30):
+    for _ in range(20):
         t0 = time.time()
         MP.LoLAverage(x, y)
         t1 = time.time()
