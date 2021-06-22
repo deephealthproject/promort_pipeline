@@ -3,6 +3,8 @@ LFLAGS = $(shell python3-config --ldflags)
 BIND_INCL = $(shell python3 -m pybind11 --includes)
 BIND_SUFF = $(shell python3-config --extension-suffix)
 IXXFLAGS = $(BIND_INCL)
+#MPICC = /usr/mpi/gcc/openmpi-4.0.3rc4/bin/mpiCC
+MPICC = mpic++
 
 .PHONY: clean all
 
@@ -12,10 +14,10 @@ clean:
 	rm -f *.o runme BPH$(BIND_SUFF)
 
 MMPI: pybindings.cpp miniMPI.cpp
-	mpiCC $(CXXFLAGS) $(IXXFLAGS) -shared -fPIC $^ -o $@$(BIND_SUFF) $(LFLAGS)
+	$(MPICC) $(CXXFLAGS) $(IXXFLAGS) -shared -fPIC $^ -o $@$(BIND_SUFF) $(LFLAGS)
 
 %.o : %.cpp
-	mpiCC $(CXXFLAGS) $(IXXFLAGS) -c -o $@ $< $(LFLAGS)
+	$(MPICC) $(CXXFLAGS) $(IXXFLAGS) -c -o $@ $< $(LFLAGS)
 
 dep.mk: *.cpp *.hpp
 	g++ -MM *.cpp > dep.mk
