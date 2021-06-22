@@ -25,17 +25,6 @@ using namespace eddl;
 //////////////////////////////////
 
 int main(int argc, char **argv) {
-    // MPI initialization
-    //int h_len;
-    //char hostname[MPI_MAX_PROCESSOR_NAME];
-    //int mpi_size;
-    //int mpi_rank;
-    //MPI_Init(NULL, NULL);
-    //MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
-    //MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
-    //MPI_Get_processor_name(hostname, &h_len);
-    //cout << "Hello from " << hostname << ", rank " << mpi_rank << " of " << mpi_size << endl;
-    
     int n_sync = 1;
     mpi_env* MPE = new mpi_env(n_sync);
 
@@ -79,7 +68,7 @@ int main(int argc, char **argv) {
         // cs = CS_FPGA({1});
     }
 
-    SGD_mpi* opt = new SGD_mpi(MPE, 0.001);
+    SGD_mpi* opt = new SGD_mpi(MPE, 0.01);
 
     // Build model
     build(net,
@@ -87,7 +76,9 @@ int main(int argc, char **argv) {
           {"softmax_cross_entropy"}, // Losses
           {"categorical_accuracy"}, // Metrics
           cs );
-//    toGPU(net, {1}, 100,"low_mem"); // In two gpus, syncronize every 100 batches, low_mem setup
+
+    // Initializing all network copies with the same parameters
+    MPE->Broadcast_params(net);
 
     // View model
     summary(net);

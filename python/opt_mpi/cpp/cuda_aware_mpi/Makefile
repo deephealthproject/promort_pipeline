@@ -1,6 +1,6 @@
 CXXFLAGS = -Wall -Wextra -pedantic -std=c++17 -O2
-LFLAGS = -L/usr/local/lib/ -l ecvl_eddl -l eddl -l mpi
-IXXFLAGS = -I/usr/local/include/eddl -I/usr/local/include/ecvl
+LFLAGS = -L/usr/local/lib/ -L/usr/local/cuda/lib64/ -l cudart  -l ecvl_eddl -l eddl -l mpi
+IXXFLAGS = -I/usr/local/include/eddl -I/usr/local/include/ecvl -I/usr/local/cuda/include -I/usr/local/include/eigen3
 # All .o files go to build dir.
 BUILD_DIR = ./
 CPP = $(wildcard ./*.cpp)
@@ -20,6 +20,6 @@ mnist_mpi: $(OBJ)
 	mpiCC $(CXXFLAGS) $(IXXFLAGS) -c -o $@ $< $(LFLAGS)
 
 dep.mk: *.cpp *.hpp
-	g++ -MM *.cpp > dep.mk
+	g++ -MM $(IXXFLAGS) *.cpp > dep.mk
 
 include dep.mk

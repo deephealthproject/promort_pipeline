@@ -1,14 +1,18 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "../cpp/with_cuda_rt/mpi_env.hpp"
-#include "../cpp/with_cuda_rt/optim_sgd_mpi.hpp"
+//#include "../cpp/with_cuda_rt/mpi_env.hpp"
+//#include "../cpp/with_cuda_rt/optim_sgd_mpi.hpp"
+#include "../cpp/cuda_aware_mpi/mpi_env.hpp"
+#include "../cpp/cuda_aware_mpi/optim_sgd_mpi.hpp"
 
 namespace py = pybind11;
 
 
 PYBIND11_MODULE(OPT_MPI, m) {
     m.doc() = "pybind11 SGD_mpi and mpi_env for eddl layers"; // optional module docstring
-    m.def("sgd_mpi", &sgd_mpi); // High level API
+    //m.def("sgd_mpi", &sgd_mpi); // High level API
+
+    m.def("sgd_mpi", (class Optimizer* (*)(mpi_env*, float, float, float, bool)) sgd_mpi, "C++: sgd_mpi(mpi_env*, float, float, float, bool) --> class Optimizer *", py::return_value_policy::reference, py::arg("MPE"), py::arg("lr") = 0.01f, py::arg("momentum") = 0.0f, py::arg("weight_decay") = 0.0f, py::arg("nesterov") = false);
 
     py::module _core = py::module::import("pyeddl._core");
     m.attr("SGD") = _core.attr("SGD");

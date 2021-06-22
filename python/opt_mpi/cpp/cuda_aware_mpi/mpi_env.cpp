@@ -19,33 +19,46 @@ mpi_env::~mpi_env(){MPI_Finalize();}
 void mpi_env::Barrier(){MPI_Barrier(MPI_COMM_WORLD);}
 
 void mpi_env::Bcast_Tensor(Tensor* t_in, int root){
-    std::cout << "BROADCAST, rank " << mpi_rank << ", " << t_in->ptr << std::endl;
-    MPI_Bcast(t_in->ptr, t_in->size, MPI_FLOAT, root, MPI_COMM_WORLD);
+    size_t sz = t_in->size;
+    float* data = new float [sz];
+    MPI_Bcast(data, sz, MPI_FLOAT, root, MPI_COMM_WORLD);
 }
 
 void mpi_env::Allreduce_Tensor(Tensor* t_in){
-    float* t_in_ptr = t_in->ptr;
     size_t sz = t_in->size;
-    float* t_out_ptr = new float [sz];
     size_t block = mpi_block;
     size_t mits = sz/block + 1;
     size_t rem = sz%block;
 
-    std::cout << "SYNC_GRAD: " << mpi_rank << ", "  << t_in->ptr << ", " << t_out_ptr << ", " << sz << ", " << block << ", " << mits << ", " << rem << std::endl;
+    float* out_ptr_h_start = new float [sz];
+    float* out_ptr_h = out_ptr_h_start;
+    float* in_ptr_h = new float [sz];
+
     // blocked all_reduce + rescale
     for (size_t mit=0; mit<mits; ++mit){
         // if last block go through reminder
         if (mit==mits-1)
             block = rem;
-        float* out_beg = t_out_ptr; // save beginning of block
-        std::cout << "LOOP " << mit << ", " << block << std::endl;
-        MPI_Allreduce(t_in_ptr, t_out_ptr, block, MPI_FLOAT,
+        float* out_beg = out_ptr_h; // save beginning of block
+        MPI_Allreduce(in_ptr_h, out_ptr_h, block, MPI_FLOAT,
               MPI_SUM, MPI_COMM_WORLD);
-        std::cout << "AllReduce done" << mit << std::endl;
-        t_out_ptr = out_beg; // rewind block of output
+        out_ptr_h = out_beg; // rewind block of output
         for(size_t i=0; i<block; ++i)
-            *(t_out_ptr++) *= div; // rescale
+            *(out_ptr_h++) *= div; // rescale
     }
-    delete t_out_ptr;
-    std::cout << "EXIT" << std::endl;
+
+    delete [] out_ptr_h_start;
+    delete [] in_ptr_h;
+}
+
+void mpi_env::Broadcast_params(Net* net){
+    vlayer layers = net->layers;
+    for (unsigned int i = 0; i < layers.size(); i++) {
+        if (layers[i]->trainable) {
+            for (int j = 0; j < layers[i]->get_trainable_params_count(); j++) {
+                Tensor* par = layers[i]->params[j];
+                Bcast_Tensor(par, 0);
+            }
+        }
+    }
 }

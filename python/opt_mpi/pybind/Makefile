@@ -1,7 +1,7 @@
-SRC_PARENT = ../cpp/with_cuda_rt
+SRC_PARENT = ../cpp/cuda_aware_mpi
 CXXFLAGS = -fPIC -Wall -Wextra -pedantic -std=c++17 -O2
 LFLAGS = -L/usr/local/lib/ -L/usr/local/cuda/lib64/ -l cudart  -l ecvl_eddl -l eddl -l mpi
-IXXFLAGS = -I/usr/local/include/eddl -I/usr/local/include/ecvl -I/usr/local/cuda/include -I$(SRC_PARENT)
+IXXFLAGS = -I/usr/local/include/eddl -I/usr/local/include/ecvl -I/usr/local/cuda/include -I$(SRC_PARENT) -I/usr/local/include/eigen3
 # All .o files go to build dir.
 BUILD_DIR = ./
 CPP = $(wildcard $(SRC_PARENT)/*.cpp)
