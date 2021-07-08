@@ -1,7 +1,7 @@
 import argparse
 from getpass import getpass
 from envloader import EnvLoader
-from mpi_functions import train
+from minimpi_functions import train
 
 import time
 from tqdm import trange, tqdm
