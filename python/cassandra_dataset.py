@@ -402,24 +402,32 @@ class CassandraListManager():
             self._cow_rows[sn]={}
             for l in self._rows[sn].keys():
                 self._cow_rows[sn][l]=len(self._rows[sn][l])
-        borders = self.max_patches * self.split_ratios.cumsum()
+        borders = self.max_patches * self.balance.cumsum()
+        borders = borders.round().astype(int)
+        borders = np.pad(borders, [1,0])
+        max_class = [borders[i+1]-borders[i] for i in range(self.num_classes)]
+        max_class = np.array(max_class)
+        avail_class = self._stats.sum(axis=0)
+        get_from_class = np.min([max_class, avail_class], axis=0)
+        tot_patches = get_from_class.sum()
+        borders = tot_patches * self.split_ratios.cumsum()
         borders = borders.round().astype(int)
         borders = np.pad(borders, [1,0])
         max_split = [borders[i+1]-borders[i] for i in range(self.num_splits)]
         sp_rows = []
-        pbar = tqdm(desc='Choosing patches', total=self.max_patches)
+        pbar = tqdm(desc='Choosing patches', total=tot_patches)
         for sp in range(self.num_splits): # for each split
             sp_rows.append([])
             bag = self._bags[sp]
             max_sample = len(bag)
-            tmp = max_split[sp] * self.balance.cumsum()
-            tmp = tmp.round().astype(int)
-            tmp = np.pad(tmp, [1,0])
-            max_class = [tmp[i+1]-tmp[i] for i in range(tmp.shape[0]-1)]
             for cl in range(self.num_classes): # fill with each class
+                tmp = get_from_class[cl] * self.split_ratios.cumsum()
+                tmp = tmp.round().astype(int)
+                tmp = np.pad(tmp, [1,0])
+                m_class = tmp[sp+1]-tmp[sp]
                 cur_sample = 0
                 tot = 0
-                while (tot<max_class[cl]):
+                while (tot<m_class):
                     if (not self._enough_rows(sp, cur_sample, self.labs[cl])):
                         cur_sample = self._find_row(sp, cur_sample, self.labs[cl])
                     if (cur_sample<0): # not found, skip to next class
