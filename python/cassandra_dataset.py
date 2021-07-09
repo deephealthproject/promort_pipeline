@@ -791,6 +791,23 @@ class CassandraDataset():
                 # reset index and preload batch
                 self.current_index[cs] = 0
                 self._preload_batch(cs)
+    def mix_splits(self, chosen_splits=[]):
+        """ Mix data from different splits.
+
+        Note: use, e.g., when trainining distributely
+        :param chosen_splits: List of chosen splits
+        :returns: 
+        :rtype: 
+
+        """
+        mix = np.concatenate([self.split[sp] for sp in chosen_splits])
+        mix = np.random.permutation(mix)
+        start = 0
+        for sp in chosen_splits:
+            sz = self.split[sp].size
+            self.split[sp] = mix[start:start+sz]
+            start += sz
+            self.rewind_splits(sp)
     def _save_futures(self, rows, cs):
         # choose augmentation
         aug = None
