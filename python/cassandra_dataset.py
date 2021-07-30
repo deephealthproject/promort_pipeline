@@ -779,12 +779,12 @@ class CassandraDataset():
         :rtype: 
 
         """
-        self._ignore_batches()
         if (chosen_split is None):
             splits = range(self.num_splits)
         else:
             splits = [chosen_split]
         for cs in splits:
+            self._ignore_batch(cs)
             with self.locks[cs]:
                 if (shuffle):
                     self.split[cs] = np.random.permutation(self.split[cs])
@@ -794,7 +794,7 @@ class CassandraDataset():
     def mix_splits(self, chosen_splits=[]):
         """ Mix data from different splits.
 
-        Note: use, e.g., when trainining distributely
+        Note: to be used, e.g., when trainining distributely
         :param chosen_splits: List of chosen splits
         :returns: 
         :rtype: 
