@@ -29,6 +29,7 @@ PYBIND11_MODULE(OPT_MPI, m) {
        .def_readonly("mpi_size", &mpi_env::mpi_size)
        .def("Barrier", &mpi_env::Barrier)
        .def("Bcast_Tensor", &mpi_env::Bcast_Tensor)
+       .def("Gather_and_average", &mpi_env::Gather_and_average)
        .def("Allreduce_Tensor", &mpi_env::Allreduce_Tensor)
        .def("Broadcast_params", &mpi_env::Broadcast_params);
 }

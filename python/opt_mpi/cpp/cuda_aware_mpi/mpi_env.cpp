@@ -11,10 +11,11 @@ mpi_env::mpi_env(int n_sync, int bl):n_sync(n_sync), bl(bl){
     mpi_block = bl * 1024;
     div = 1/(static_cast<float>(mpi_size)); 
 
+    avg_data = new float [mpi_size];
     std::cout << "MPI_ENV Constructor, hello from " << hostname << ", rank " << mpi_rank << std::endl;
 }
 
-mpi_env::~mpi_env(){MPI_Finalize();}
+mpi_env::~mpi_env(){delete[] avg_data; MPI_Finalize();}
 
 void mpi_env::Barrier(){MPI_Barrier(MPI_COMM_WORLD);}
 
@@ -22,6 +23,14 @@ void mpi_env::Bcast_Tensor(Tensor* t_in, int root){
     size_t sz = t_in->size;
     float* data = new float [sz];
     MPI_Bcast(data, sz, MPI_FLOAT, root, MPI_COMM_WORLD);
+}
+
+float mpi_env::Gather_and_average(float send_data){
+    float average = 0.0;	
+    MPI_Gather(&send_data, 1, MPI_FLOAT, avg_data, 1, MPI_FLOAT, 0, MPI_COMM_WORLD);
+    for (int i = 0; i < mpi_size; i++)
+       average += *(avg_data + i);	    
+    return average * div;
 }
 
 void mpi_env::Allreduce_Tensor(Tensor* t_in){
@@ -43,8 +52,8 @@ void mpi_env::Allreduce_Tensor(Tensor* t_in){
         MPI_Allreduce(in_ptr_h, out_ptr_h, block, MPI_FLOAT,
               MPI_SUM, MPI_COMM_WORLD);
         out_ptr_h = out_beg; // rewind block of output
-        for(size_t i=0; i<block; ++i)
-            *(out_ptr_h++) *= div; // rescale
+        //for(size_t i=0; i<block; ++i)
+        //    *(out_ptr_h++) *= div; // rescale
     }
 
     delete [] out_ptr_h_start;
