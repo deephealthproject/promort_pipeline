@@ -39,6 +39,13 @@ BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
   data_col(data_col), id_col(id_col), username(username),
   password(cass_pass), cassandra_ips(cassandra_ips), port(port)
 {
+  // init multi-buffering variables
+  bs.resize(max_buf);
+  batch.resize(max_buf);
+  t_feats.resize(max_buf);
+  t_labs.resize(max_buf);
+  for(int i=0; i<max_buf; ++i)
+    write_buf.push(i);
   // join cassandra ip's into comma seperated string
   s_cassandra_ips =
     accumulate(cassandra_ips.begin(), cassandra_ips.end(), string(), 
@@ -95,7 +102,19 @@ ecvl::Image BatchPatchHandler::buf2img(const vector<char>& buf){
   return(r);
 }
 
-void BatchPatchHandler::get_img(const CassResult* result, int off){
+
+void BatchPatchHandler::setImPar(ecvl::Image* im){
+  height = im->Height();
+  width = im->Width();
+  chan = im->Channels();
+  tot_dims = chan * height * width;
+}
+void BatchPatchHandler::allocTens(int wb){
+  t_feats[wb] = shared_ptr<Tensor>(new Tensor({bs[wb], chan, height, width}));
+  t_labs[wb] = shared_ptr<Tensor>(new Tensor({bs[wb], num_classes}));
+}
+
+void BatchPatchHandler::get_img(const CassResult* result, int off, int wb){
   // decode result
   const CassRow* row = cass_result_first_row(result);
   if (row == NULL) {
@@ -125,22 +144,16 @@ void BatchPatchHandler::get_img(const CassResult* result, int off){
   mtx.lock();
   // if unset, set images parameters
   if (height<0){
-    height = im.Height();
-    width = im.Width();
-    chan = im.Channels();
-    tot_dims = chan * height * width;
+    setImPar(&im);
   }
   // allocate batch if needed
-  if (init_batch){
-    t_feats = unique_ptr<Tensor>(new Tensor({bs, chan, height, width}));
-    t_labs = unique_ptr<Tensor>(new Tensor({bs, num_classes}));
+  if (!t_feats[wb]){
+    allocTens(wb);
   }
-  init_batch = false;
   mtx.unlock();
   ////////////////////////////////////////////////////////////////////////
-
   // copy image and label to tensors
-  float* p_feats =t_feats->ptr + off*tot_dims;
+  float* p_feats =t_feats[wb]->ptr + off*tot_dims;
   uint8_t* p_im = im.data_;
   for(int i=0; i<tot_dims; ++i){
     *(p_feats++) = static_cast<float>(*(p_im++));
@@ -150,7 +163,7 @@ void BatchPatchHandler::get_img(const CassResult* result, int off){
   // ecvl::ImageToTensor(im, tf, off);
 
   // convert label 
-  float* p_labs = t_labs->ptr + off*num_classes;
+  float* p_labs = t_labs[wb]->ptr + off*num_classes;
   if (multi_label){ // multi-label encoding
     for(int i=0; i<num_classes; ++i){
       *(p_labs++) = static_cast<float>(lab&1);
@@ -164,7 +177,7 @@ void BatchPatchHandler::get_img(const CassResult* result, int off){
   }
 }
 
-void BatchPatchHandler::future2img(CassFuture* query_future, int off){
+void BatchPatchHandler::future2img(CassFuture* query_future, int off, int wb){
   // get result (blocking)
   const CassResult* result = cass_future_get_result(query_future);
   if (result == NULL) {
@@ -178,12 +191,12 @@ void BatchPatchHandler::future2img(CassFuture* query_future, int off){
 			string(error_message));
   }
   cass_future_free(query_future);
-  get_img(result, off);
+  get_img(result, off, wb);
 }
 
 vector<CassFuture*> BatchPatchHandler::keys2futures(const vector<string>& keys){
   vector<CassFuture*> futs;
-  futs.reserve(bs);
+  futs.reserve(keys.size());
   for(auto it=keys.begin(); it!=keys.end(); ++it){
     string id = *it;
     // prepare query
@@ -199,15 +212,14 @@ vector<CassFuture*> BatchPatchHandler::keys2futures(const vector<string>& keys){
 }
 
 
-void BatchPatchHandler::get_images(const vector<string>& keys){
+void BatchPatchHandler::get_images(const vector<string>& keys, int wb){
+  bs[wb] = keys.size();
   vector<CassFuture*> futs = keys2futures(keys);
   vector<future<void>> asys;
-  asys.reserve(bs);
-  for(auto i=0; i!=bs; ++i){
+  asys.reserve(bs[wb]);
+  for(auto i=0; i!=bs[wb]; ++i){
     // recover data and label
-    // future2img(futs[i], i);
-    // asys.push_back(async(launch::async, &BatchPatchHandler::future2img, this, futs[i], i));
-    asys.emplace_back(pool->enqueue(&BatchPatchHandler::future2img, this, futs[i], i));
+    asys.emplace_back(pool->enqueue(&BatchPatchHandler::future2img, this, futs[i], i, wb));
   }
   // barrier
   for(auto it=asys.begin(); it!=asys.end(); ++it){
@@ -215,16 +227,18 @@ void BatchPatchHandler::get_images(const vector<string>& keys){
   }
 }
 
-pair<unique_ptr<Tensor>, unique_ptr<Tensor>> BatchPatchHandler::load_batch(const vector<string>& keys){
-  bs = keys.size();
-  init_batch = true;
+pair<shared_ptr<Tensor>, shared_ptr<Tensor>> BatchPatchHandler::load_batch(const vector<string>& keys, int wb){
   // get images and assemble batch
-  get_images(keys);
-  auto r = make_pair(move(t_feats), move(t_labs));
+  get_images(keys, wb);
+  auto r = make_pair(move(t_feats[wb]), move(t_labs[wb]));
+  if (t_feats[wb] || t_labs[wb])
+    throw runtime_error("Error: pointers should be null");
   return(r);
 }
 
 void BatchPatchHandler::schedule_batch(const vector<py::object>& keys){
+  int wb = write_buf.front();
+  write_buf.pop();
   // convert uuids to strings
   vector<string> ks;
   ks.reserve(keys.size());
@@ -232,14 +246,16 @@ void BatchPatchHandler::schedule_batch(const vector<py::object>& keys){
     string s = py::str(*it);
     ks.push_back(s);
   }
-  batch = async(launch::async, &BatchPatchHandler::load_batch, this, ks);
-  // t_batch = load_batch(ks);
+  batch[wb] = async(launch::async, &BatchPatchHandler::load_batch, this, ks, wb);
+  read_buf.push(wb);
 }
 
 pair<shared_ptr<Tensor>, shared_ptr<Tensor>> BatchPatchHandler::block_get_batch(){
-  auto b = batch.get();
-  auto r = make_pair(shared_ptr<Tensor>(move(b.first)),
-		     shared_ptr<Tensor>(move(b.second)));
+  int rb = read_buf.front();
+  read_buf.pop();
+  auto b = batch[rb].get();
+  auto r = make_pair(shared_ptr<Tensor>(b.first), shared_ptr<Tensor>(b.second));
+  write_buf.push(rb);
   return(r);
 }
 
