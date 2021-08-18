@@ -45,26 +45,29 @@ private:
   ThreadPool* pool;
   mutex mtx;
   // batch parameters
-  int bs;
-  bool init_batch = false;
   int chan;
   int height = -1;
   int width;
   int tot_dims;
   // current batch
-  future<pair<unique_ptr<Tensor>, unique_ptr<Tensor>>> batch;
-  pair<unique_ptr<Tensor>, unique_ptr<Tensor>> t_batch; // test
-  unique_ptr<Tensor> t_feats;
-  unique_ptr<Tensor> t_labs;
+  const int max_buf = 2;
+  vector<int> bs;
+  vector<future<pair<shared_ptr<Tensor>, shared_ptr<Tensor>>>> batch;
+  vector<shared_ptr<Tensor>> t_feats;
+  vector<shared_ptr<Tensor>> t_labs;
+  queue<int> read_buf;
+  queue<int> write_buf;
   // methods
   void connect();
   vector<char> file2buf(string filename);
   ecvl::Image buf2img(const vector<char>& buf);
   cv::Mat buf2mat(const vector<char>& buf);
-  void get_img(const CassResult* result, int off);
-  void get_images(const vector<string>& keys);
+  void get_img(const CassResult* result, int off, int wb);
+  void get_images(const vector<string>& keys, int wb);
   vector<CassFuture*> keys2futures(const vector<string>& keys);
-  void future2img(CassFuture* query_future, int off);
+  void future2img(CassFuture* query_future, int off, int wb);
+  void setImPar(ecvl::Image* im);
+  void allocTens(int wb);
 public:
   BatchPatchHandler(int num_classes, ecvl::Augmentation* aug, string table,
 		    string label_col, string data_col, string id_col,
@@ -72,7 +75,7 @@ public:
 		    vector<string> cassandra_ips, int thread_par=32, int port=9042);
   ~BatchPatchHandler();
   void schedule_batch(const vector<py::object>& keys);
-  pair<unique_ptr<Tensor>, unique_ptr<Tensor>> load_batch(const vector<string>& keys);
+  pair<shared_ptr<Tensor>, shared_ptr<Tensor>> load_batch(const vector<string>& keys, int wb);
   pair<shared_ptr<Tensor>, shared_ptr<Tensor>> block_get_batch();
 };
 

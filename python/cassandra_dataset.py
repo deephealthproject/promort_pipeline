@@ -851,10 +851,10 @@ class CassandraDataset():
         else:
             cs = split
         with self.locks[cs]:
-            # compute batch from preloaded raw data
-            batch = self._compute_batch(cs)
             # start preloading the next batch
             self._preload_batch(cs)
+            # compute batch from preloaded raw data
+            batch = self._compute_batch(cs)
         return(batch)
     def load_batch_cross(self, not_splits=[]):
         """Load batch from random split, excluding some (def: [current_split])

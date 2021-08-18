@@ -43,7 +43,7 @@ int main(){
 	  "4b675d87-d428-4087-ac85-c23b335d8c4c",
 	  "2940cbad-ced2-4d41-a2ac-b693284c5db1"
 	  });
-    auto z = h->load_batch(v);
+    auto z = h->load_batch(v, 0);
     cout << b << endl;
   }
 }
