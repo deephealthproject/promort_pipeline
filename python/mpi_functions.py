@@ -90,8 +90,9 @@ def train(el, init_weights_fn, epochs, lr, gpus, dropout, l2_reg, seed, out_dir)
             tx, ty = [x], [y]
                     
             #print (f'Train batch rank: {rank}, ep: {e}, macro_batch: {mb}, local training rank: {lt}, inidipendent iteration: {s_it}') 
-            eddl.train_batch(net, tx, ty)
-            
+            #eddl.train_batch(net, tx, ty)
+            time.sleep(0.136) # This is the iteration time for bs 28.        
+
             net_out = eddl.getOutput(net.layers[-1]).getdata() 
             loss = eddl.get_losses(net)[0]
             acc = eddl.get_metrics(net)[0]
@@ -135,8 +136,9 @@ def train(el, init_weights_fn, epochs, lr, gpus, dropout, l2_reg, seed, out_dir)
             tx, ty = [x], [y]
                     
             #print (f'Train batch rank: {rank}, ep: {e}, macro_batch: {mb}, local training rank: {lt}, inidipendent iteration: {s_it}') 
-            eddl.forward(net, tx)
-            
+            #eddl.forward(net, tx)
+            time.sleep(0.077) # Iteration time of the forward pass, bs 28
+
             net_out = eddl.getOutput(net.layers[-1]) 
        
             sum_ca = 0.0 ## sum of samples accuracy within a batch
