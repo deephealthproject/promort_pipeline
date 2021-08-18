@@ -115,9 +115,12 @@ class EnvLoader():
 
         else:
             ## multinode and/or multigpu
-            gpu_mask = [0] * self.ngpus
-            gpu_mask[self.MP.mpi_rank % self.ngpus] = 1
-            
+            if self.gpus:
+                gpu_mask = [0] * self.ngpus
+                gpu_mask[self.MP.mpi_rank % self.ngpus] = 1
+            else:
+                gpu_mask = []
+
             eddl.build(
                 self.net,
                 sgd_mpi(self.MP, self.lr),
