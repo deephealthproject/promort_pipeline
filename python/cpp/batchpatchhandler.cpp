@@ -10,8 +10,10 @@
 
 
 BatchPatchHandler::~BatchPatchHandler(){
-  cass_session_free(session);
-  cass_cluster_free(cluster);
+  if (connected){
+    cass_session_free(session);
+    cass_cluster_free(cluster);
+  }
 }
 
 void BatchPatchHandler::connect(){
@@ -27,35 +29,6 @@ void BatchPatchHandler::connect(){
   } else {
     throw runtime_error("Error: unable to connect to Cassandra DB. ");
   }
-}
-
-BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
-				     string table, string label_col,
-				     string data_col, string id_col,
-				     string username, string cass_pass,
-				     vector<string> cassandra_ips,
-				     int thread_par, int port) :
-  num_classes(num_classes), aug(aug), table(table), label_col(label_col),
-  data_col(data_col), id_col(id_col), username(username),
-  password(cass_pass), cassandra_ips(cassandra_ips), port(port)
-{
-  // init multi-buffering variables
-  bs.resize(max_buf);
-  batch.resize(max_buf);
-  t_feats.resize(max_buf);
-  t_labs.resize(max_buf);
-  for(int i=0; i<max_buf; ++i)
-    write_buf.push(i);
-  // join cassandra ip's into comma seperated string
-  s_cassandra_ips =
-    accumulate(cassandra_ips.begin(), cassandra_ips.end(), string(), 
-	       [](const string& a, const string& b) -> string { 
-		 return a + (a.length() > 0 ? "," : "") + b; 
-	       } );
-  // set multi-label or not
-  multi_label = (num_classes>_max_multilabs) ? false : true;
-  // connect to cluster and init session
-  connect();
   // assemble query
   stringstream ss;
   ss << "SELECT " << label_col << ", " << data_col <<
@@ -72,6 +45,35 @@ BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
   cass_future_free(prepare_future);
   // init thread pool
   pool = new ThreadPool(thread_par);
+}
+
+
+BatchPatchHandler::BatchPatchHandler(int num_classes, ecvl::Augmentation* aug,
+				     string table, string label_col,
+				     string data_col, string id_col,
+				     string username, string cass_pass,
+				     vector<string> cassandra_ips,
+				     int thread_par, int port) :
+  thread_par(thread_par), num_classes(num_classes), aug(aug),
+  table(table), label_col(label_col), data_col(data_col), id_col(id_col),
+  username(username), password(cass_pass), cassandra_ips(cassandra_ips),
+  port(port)
+{
+  // init multi-buffering variables
+  bs.resize(max_buf);
+  batch.resize(max_buf);
+  t_feats.resize(max_buf);
+  t_labs.resize(max_buf);
+  for(int i=0; i<max_buf; ++i)
+    write_buf.push(i);
+  // join cassandra ip's into comma seperated string
+  s_cassandra_ips =
+    accumulate(cassandra_ips.begin(), cassandra_ips.end(), string(), 
+	       [](const string& a, const string& b) -> string { 
+		 return a + (a.length() > 0 ? "," : "") + b; 
+	       } );
+  // set multi-label or not
+  multi_label = (num_classes>_max_multilabs) ? false : true;
 }
 
 vector<char> BatchPatchHandler::file2buf(string filename){
@@ -236,6 +238,15 @@ pair<shared_ptr<Tensor>, shared_ptr<Tensor>> BatchPatchHandler::load_batch(const
   return(r);
 }
 
+void BatchPatchHandler::check_connection(){
+  if(!connected){
+    connect();
+    connected = true;
+    batch[wb0] = async(launch::async, &BatchPatchHandler::load_batch, this, keys0, wb0);
+    read_buf.push(wb0);
+  }
+}
+
 void BatchPatchHandler::schedule_batch(const vector<py::object>& keys){
   int wb = write_buf.front();
   write_buf.pop();
@@ -246,11 +257,21 @@ void BatchPatchHandler::schedule_batch(const vector<py::object>& keys){
     string s = py::str(*it);
     ks.push_back(s);
   }
+  // if first batch, save it for lazy execution
+  if (first_read){
+    keys0 = ks;
+    wb0 = wb;
+    first_read = false;
+    return;
+  }
+  check_connection();
   batch[wb] = async(launch::async, &BatchPatchHandler::load_batch, this, ks, wb);
   read_buf.push(wb);
 }
 
 pair<shared_ptr<Tensor>, shared_ptr<Tensor>> BatchPatchHandler::block_get_batch(){
+  check_connection();
+  // recover
   int rb = read_buf.front();
   read_buf.pop();
   auto b = batch[rb].get();
@@ -259,3 +280,14 @@ pair<shared_ptr<Tensor>, shared_ptr<Tensor>> BatchPatchHandler::block_get_batch(
   return(r);
 }
 
+void BatchPatchHandler::ignore_batch(){
+  if (!connected){
+    first_read = true;
+    if(wb0>=0)
+      write_buf.push(wb0);
+    return;
+  }
+  // if already connected wait for batch to be computed
+  auto b = block_get_batch();
+  return;
+}

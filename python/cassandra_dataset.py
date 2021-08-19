@@ -9,6 +9,7 @@ from pyeddl.tensor import Tensor
 import time
 import threading
 from tqdm import trange, tqdm
+from BPH import BatchPatchHandler
 
 # pip3 install cassandra-driver
 import cassandra
@@ -39,138 +40,6 @@ class PagedResultHandler():
         self.error = exc
         self.finished_event.set()
 
-# Handler for batch of patches
-class BatchPatchHandler():
-    def __init__(self, num_classes, aug, table, label_col, data_col,
-                 id_col, username, cass_pass, cassandra_ips,
-                 thread_par=32, port=9042):
-        self.aug = aug
-        self.num_classes = num_classes
-        self.label_col = label_col
-        self.data_col = data_col
-        self.id_col = id_col
-        self.finished_event = threading.Event()
-        self.lock = threading.Lock()
-        self.thread_par = thread_par
-        self.tot = None
-        self.cow = 0
-        self.onair = 0
-        self.errors = []
-        self.feats = []
-        self.labels = []
-        self.perm = []
-        self.bb = None
-        ## multi-label when num_classes is small
-        self.multi_label = (num_classes<=_max_multilabs)
-        ## cassandra parameters
-        prof_dict = ExecutionProfile(
-            load_balancing_policy=TokenAwarePolicy(DCAwareRoundRobinPolicy()),
-            row_factory = cassandra.query.dict_factory)
-        profs = {'dict': prof_dict}
-        auth_prov = PlainTextAuthProvider(username=username, password=cass_pass)
-        self.cluster = Cluster(cassandra_ips,
-                               execution_profiles=profs,
-                               protocol_version=4,
-                               auth_provider=auth_prov,
-                               port=port)
-        self.cluster.connect_timeout = 10 #seconds
-        self.sess = self.cluster.connect()
-        self.table = table
-        query = f"SELECT {self.label_col}, {self.data_col} \
-        FROM {self.table} WHERE {self.id_col}=?"
-        self.prep = self.sess.prepare(query)
-    def __del__(self):
-        self.cluster.shutdown()
-    def reset(self, tot):
-        self.tot = tot
-        self.cow = 0
-        self.onair = 0
-        self.errors = []
-        self.feats = []
-        self.labels = []
-        self.perm = []
-        self.bb = None
-        self.finished_event.clear()
-    def schedule_batch(self, keys_):
-        self.reset(tot=len(keys_))
-        kk = list(enumerate(keys_))
-        # concurrent queries to Cassandra server
-        cass_par = min(self.thread_par, self.tot)
-        while (len(kk)>0):
-            with self.lock:
-                if (self.onair<cass_par):
-                    idx, keys = kk.pop(0)
-                    future = self.sess.execute_async(self.prep, [keys],
-                                                     execution_profile='dict')
-                    self.onair += 1
-                    self.add_future(future, idx)
-            # sleep 0.1 ms
-            time.sleep(.0001)
-    def add_future(self, future, idx):
-        future.add_callbacks(
-            callback=self.handle_res(idx),
-            errback=self.handle_error)
-    def _get_img(self, item):
-        # read label
-        lab = item[self.label_col] # read 32-bit int
-        # convert to bits
-        if (self.multi_label):
-            lab = np.unpackbits(np.array([lab], dtype=">i4").view(np.uint8))
-            lab = lab[-self.num_classes:] # take last num_classes bits
-            lab = np.flip(lab) # reverse order
-        else:
-            v_lab = np.zeros([self.num_classes])
-            v_lab[lab] = 1
-            lab = v_lab
-        # read image
-        raw_img = item[self.data_col]
-        in_stream = io.BytesIO(raw_img)
-        img = PIL.Image.open(in_stream) # xyc, RGB
-        arr = np.array(img) # yxc, RGB
-        img.close()
-        arr = arr[..., ::-1] # yxc, BGR
-        # apply augmentations on eimg and then convert back to array
-        if (self.aug is not None):
-            eimg = ecvl.Image.fromarray(arr, "yxc", ecvl.ColorType.BGR)
-            self.aug.Apply(eimg)
-            arr = np.array(eimg) #yxc, BGR
-        return (arr, lab)
-    def handle_res(self, idx):
-        def fun(rows):
-            assert(len(rows)==1)
-            item = rows[0]
-            feat, lab = self._get_img(item)
-            with self.lock:
-                self.feats.append(feat)
-                self.labels.append(lab)
-                self.perm.append(idx)
-                self.cow += 1
-                self.onair -= 1
-                if(self.cow==self.tot): # last patch
-                    # recover original order of images
-                    sh = []
-                    for (i,x) in enumerate(self.perm):
-                        sh.append([x,i])
-                    sh = np.array(sorted(sh))[:,1]
-                    # reorder data and conclude
-                    feats = np.array(self.feats)[sh]
-                    labels = np.array(self.labels)[sh]
-                    self.bb = (Tensor(feats.transpose(0,3,1,2)), Tensor(labels))
-                    self.finished_event.set()
-        return fun
-    def handle_error(self, exc):
-        self.errors.append(exc)
-        self.finished_event.set()
-    def block_get_batch(self):
-        self.finished_event.wait() # wait for data to be ready
-        if (len(self.errors)>0): # if errors raise exception
-            raise self.errors[0]
-        return(self.bb)
-
-try: 
-    from BPH import BatchPatchHandler
-except ImportError:
-    print('C++ BatchPatchHandler not found, using Python one.')
     
 class CassandraListManager():
     def __init__(self, auth_prov, cassandra_ips, table,
@@ -707,7 +576,8 @@ class CassandraDataset():
         if (self.current_index[cs]>self.split[cs].shape[0]):
             return # end of split, nothing to wait for
         # wait for (and ignore) batch
-        self._compute_batch(cs)
+        hand = self.batch_handler[cs]
+        hand.ignore_batch()
     def _ignore_batches(self):
          # wait for handlers to finish, if running
         if (self.batch_handler):
