@@ -62,7 +62,7 @@ class EnvLoader():
         print('Seed = %r ' % seed)
         ap = PlainTextAuthProvider(username='inet',
                                    password=self.inet_pass)
-        cd = CassandraDataset(ap, ['cassandra-db'], seed=seed)
+        cd = CassandraDataset(ap, ['cassandra.default.svc.cluster.local'], seed=seed)
         cd.load_rows(self.cass_row_fn)
         cd.init_datatable(table=self.cass_datatable)
         self.cd = cd

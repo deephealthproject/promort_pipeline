@@ -18,7 +18,7 @@ ext = Extension(
     ],
     library_dirs=[os.getcwd()],
     runtime_library_dirs=[os.getcwd()],
-    libraries=['opt_mpi', 'eddl', 'cuda', 'mpi'],
+    libraries=['opt_mpi', 'eddl', 'mpi'],
     extra_compile_args=EXTRA_COMPILE_ARGS,
     undef_macros=["NDEBUG"],
 )
