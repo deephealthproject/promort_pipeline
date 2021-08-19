@@ -139,7 +139,8 @@ def train(el, init_weights_fn, epochs, lr, gpus, dropout, l2_reg, seed, out_dir)
             #eddl.forward(net, tx)
             time.sleep(0.077) # Iteration time of the forward pass, bs 28
 
-            net_out = eddl.getOutput(net.layers[-1]) 
+            #net_out = eddl.getOutput(net.layers[-1])
+            net_out = Tensor((cd.batch_size, 1000))
        
             sum_ca = 0.0 ## sum of samples accuracy within a batch
             sum_ce = 0.0 ## sum of losses within a batch
