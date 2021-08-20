@@ -13,6 +13,7 @@ BatchPatchHandler::~BatchPatchHandler(){
   if (connected){
     cass_session_free(session);
     cass_cluster_free(cluster);
+    delete(pool);
   }
 }
 
