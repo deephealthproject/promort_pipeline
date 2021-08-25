@@ -25,6 +25,7 @@ Fully connected network for tissue detection in histopathology images
 import argparse
 import sys
 import numpy as np
+import pickle 
 
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
@@ -93,6 +94,11 @@ def main(args):
     eddl.fit(net, [x_train], [y_train], args.batch_size, args.epochs)
     eddl.evaluate(net, [x_test], [y_test], 1024)
     eddl.save(net, "tissue_detector_model.bin")
+    
+    splits_d = {'x_train': x_train.getdata(), 'y_train': y_train.getdata(), 'x_test': x_test.getdata(), 'y_test': y_test.getdata()}
+
+    pickle.dump(splits_d, open("splits_used.pckl", "wb"))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
