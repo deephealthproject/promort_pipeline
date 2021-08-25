@@ -24,6 +24,11 @@ namespace py = pybind11;
 class BatchPatchHandler{
 private:
   // parameters
+  bool first_read = true;
+  bool connected = false;
+  vector<string> keys0; // first batch
+  int wb0 = -1; // first buffer
+  int thread_par; // thread parallelism
   int num_classes;
   static const int _max_multilabs = 32;
   bool multi_label;
@@ -59,6 +64,7 @@ private:
   queue<int> write_buf;
   // methods
   void connect();
+  void check_connection();
   vector<char> file2buf(string filename);
   ecvl::Image buf2img(const vector<char>& buf);
   cv::Mat buf2mat(const vector<char>& buf);
@@ -77,6 +83,7 @@ public:
   void schedule_batch(const vector<py::object>& keys);
   pair<shared_ptr<Tensor>, shared_ptr<Tensor>> load_batch(const vector<string>& keys, int wb);
   pair<shared_ptr<Tensor>, shared_ptr<Tensor>> block_get_batch();
+  void ignore_batch();
 };
 
 #endif
