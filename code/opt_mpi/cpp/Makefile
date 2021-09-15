@@ -9,12 +9,12 @@ OBJ = $(CPP:%.cpp=$(BUILD_DIR)/%.o)
 .PHONY: clean all
 
 all: $(OBJ) 
-	
-clean:
-	rm -f *.o mnist_mpi dep.mk
 
 %.o : %.cpp
 	mpiCC $(CXXFLAGS) $(IXXFLAGS) -c -o $@ $< $(LFLAGS)
+	
+clean:
+	rm -f *.o mnist_mpi dep.mk
 
 dep.mk: *.cpp *.hpp
 	g++ -MM $(IXXFLAGS) *.cpp > dep.mk
