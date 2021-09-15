@@ -1,1 +1,0 @@
-cass_pass = 'pass'
