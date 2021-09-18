@@ -1,9 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-//#include "../cpp/with_cuda_rt/mpi_env.hpp"
-//#include "../cpp/with_cuda_rt/optim_sgd_mpi.hpp"
-#include "../cpp/cuda_aware_mpi/mpi_env.hpp"
-#include "../cpp/cuda_aware_mpi/optim_sgd_mpi.hpp"
+#include "../cpp/mpi_env.hpp"
+#include "../cpp/optim_sgd_mpi.hpp"
 
 namespace py = pybind11;
 

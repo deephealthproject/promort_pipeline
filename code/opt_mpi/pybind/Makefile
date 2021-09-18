@@ -1,4 +1,4 @@
-SRC_PARENT = ../cpp/cuda_aware_mpi
+SRC_PARENT = ../cpp
 CXXFLAGS = -fPIC -Wall -Wextra -pedantic -std=c++17 -O2
 LFLAGS = -L/usr/local/lib/ -L/usr/local/cuda/lib64/ -l cudart  -l ecvl_eddl -l eddl -l mpi
 IXXFLAGS = -I/usr/local/include/eddl -I/usr/local/include/ecvl -I/usr/local/cuda/include -I$(SRC_PARENT) -I/usr/local/include/eigen3
