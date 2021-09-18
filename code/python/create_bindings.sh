@@ -1,4 +1,6 @@
 #!/bin/bash
+cd /home/sgd_mpi/code/opt_mpi/cpp
+make clean
 cd /home/sgd_mpi/code/opt_mpi/pybind
 make
 python3 setup.py build
