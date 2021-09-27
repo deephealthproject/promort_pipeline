@@ -52,13 +52,18 @@ def main(args):
     net = eddl.Model([in_], [out])
     
     #opt_SGD_mpi = SGD_mpi(mpe, 1e-2, 0.9, 0.0, False)
-    
+    if args.gpu:
+        gpu_mask = [0] * mpi_size
+        gpu_mask[mpi_rank % mpi_size] = 1
+    else:
+        gpu_mask = []
+
     eddl.build(
         net,
         sgd_mpi(mpe, 1e-2, 0.9, 0.0, False),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
-        eddl.CS_GPU(mem=args.mem) if args.gpu else eddl.CS_CPU(mem=args.mem)
+        eddl.CS_GPU(gpu_mask,mem=args.mem) if args.gpu else eddl.CS_CPU(mem=args.mem)
     )
     
     if mpi_rank == 0:
