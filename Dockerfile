@@ -97,7 +97,12 @@ WORKDIR /home/sgd_mpi
 COPY . /home/sgd_mpi
 RUN chown -R sgd_mpi:sgd_mpi /home/sgd_mpi
 USER sgd_mpi
+RUN cd /home/sgd_mpi/code/python && sh create_bindings.sh && cd /home/sgd_mpi
 
 ENTRYPOINT \
     sudo service ssh restart \
+    && ssh-keygen -t rsa -N '' -f ~/.ssh/id_rsa \
+    && cat /home/sgd_mpi/.ssh/id_rsa.pub >> /home/sgd_mpi/.ssh/authorized_keys \
+    && ssh-keyscan -t rsa $HOSTNAME >> /home/sgd_mpi/.ssh/known_hosts \
+    && echo "$HOSTNAME slots=2" > /home/sgd_mpi/code/hostfile\	
     && sleep infinity
