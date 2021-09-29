@@ -2,7 +2,7 @@
 This branch contains a basic implementation of an MPI version of EDDL SGD optimizer along with a distributed version of mnist code written both in CPP and Python.
 The code requires a CUDA aware OpenMPI installation to exploit GPUDirect features for fast MPI communications among GPUs running both on the same host or on different hosts. 
 
-A working environment is provided by the *Dockerfile* in the parent folder but it is mandatory to build and load the **gdrdrv** module to the host (https://github.com/NVIDIA/gdrcopy) before running the contatiner.   
+A working environment is provided by the *Dockerfile* in the parent folder but it is mandatory to build and load the **gdrdrv** module to the host (https://github.com/NVIDIA/gdrcopy) before running the contatiner. The version of **gdrcopy** on the docker image and the host has to be the same. If for some reason the **gdrdrv** is already installed on the host, change the version in the dockerfile accordingly.
 
 
 The **code** folder has the following sub-directories:
