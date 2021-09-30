@@ -5,7 +5,7 @@ The code requires a CUDA aware OpenMPI installation to exploit GPUDirect feature
 A working environment is provided by the *Dockerfile* in the parent folder, which automatically installs the latest version of [**gdrcopy**](https://github.com/NVIDIA/gdrcopy). It is also necessary to build and load the **gdrdrv** kernel module in the host before running the container. Please note that the versions of **gdrcopy** on the docker image and the host must be the same.
 
 The **code** folder has the following sub-directories:
- * **opt_mpi**: The *cpp* sub-folder includes the code to implement mpi functionalities along with the extension of the SGD optimizer. The *python* sub-folder includes the code to create python bindings
+ * **opt_mpi**: The *cpp* sub-folder includes the code to implement mpi functionalities along with the extension of the SGD optimizer. The *pybind* sub-folder includes the code to create python bindings
  * **cpp**: *cpp* code of the mnist example
  * **python**: *python* code of the mnist example  
 
