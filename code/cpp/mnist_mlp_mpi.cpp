@@ -36,6 +36,9 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i], "--cpu") == 0) use_cpu = true;
     }
 
+    // Download mnist
+    download_mnist();
+
     // Settings
     int epochs = (testing) ? 2 : 10;
     int batch_size = 200;
@@ -81,10 +84,10 @@ int main(int argc, char **argv) {
     summary(net);
     
     // Load dataset
-    Tensor* x_train = Tensor::load("/home/sgd_mpi/data/mnist_trX.bin");
-    Tensor* y_train = Tensor::load("/home/sgd_mpi/data/mnist_trY.bin");
-    Tensor* x_test = Tensor::load("/home/sgd_mpi/data/mnist_tsX.bin");
-    Tensor* y_test = Tensor::load("/home/sgd_mpi/data/mnist_tsY.bin");
+    Tensor* x_train = Tensor::load("mnist_trX.bin");
+    Tensor* y_train = Tensor::load("mnist_trY.bin");
+    Tensor* x_test = Tensor::load("mnist_tsX.bin");
+    Tensor* y_test = Tensor::load("mnist_tsY.bin");
 
     // Computing the size of dataset to be processed by the current rank
     int train_data_size = x_train->getShape()[0];
