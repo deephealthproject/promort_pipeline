@@ -16,7 +16,7 @@ Run the following command from the parent folder to create the docker image and 
 docker build -t sgd_mpi .
 
 ### Run the container (change the gpu ids in the --gpus option if needed)
-docker run -d --privileged --name sgd_mpi --gpus '"device=0, 1"' sgd_mpi:latest
+docker run --cap-add=IPC_LOCK --cap-add=SYS_RESOURCE -d --rm --name sgd_mpi --gpus '"device=0, 1"' sgd_mpi:latest
 
 ### Get the prompt of the container
 docker exec -ti sgd_mpi /bin/bash
