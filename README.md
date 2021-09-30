@@ -28,15 +28,15 @@ HOSTNAME slots=2
 ```
 assuming a computation environment of one node with 2 GPUs.
 
-## Running the CPP example
-Go to the folder *code/cpp* and issue the following commands:
+## Running the CPP example:
 ```bash
+cd /home/sgd_mpi/code/cpp
 make
 mpirun --n 2 --hostfile ../hostfile mnist_mpi
 ```
 
-## Running the Python example
-Go to the folder *code/python* and run the example:
+## Running the Python example:
 ```bash
+cd /home/sgd_mpi/code/python
 mpirun --n 2 --hostfile ../hostfile python3 mnist_mlp.py --gpu
 ```
