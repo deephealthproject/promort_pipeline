@@ -33,12 +33,8 @@ int main(int argc, char **argv) {
     bool testing = false;
     bool use_cpu = false;
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--testing") == 0) testing = true;
-        else if (strcmp(argv[i], "--cpu") == 0) use_cpu = true;
+        if (strcmp(argv[i], "--cpu") == 0) use_cpu = true;
     }
-
-    // Download mnist
-    download_mnist();
 
     // Settings
     int epochs = (testing) ? 2 : 10;
@@ -85,42 +81,39 @@ int main(int argc, char **argv) {
     summary(net);
     
     // Load dataset
-    Tensor* x_train = Tensor::load("mnist_trX.bin");
-    Tensor* y_train = Tensor::load("mnist_trY.bin");
-    Tensor* x_test = Tensor::load("mnist_tsX.bin");
-    Tensor* y_test = Tensor::load("mnist_tsY.bin");
+    Tensor* x_train = Tensor::load("/home/sgd_mpi/data/mnist_trX.bin");
+    Tensor* y_train = Tensor::load("/home/sgd_mpi/data/mnist_trY.bin");
+    Tensor* x_test = Tensor::load("/home/sgd_mpi/data/mnist_tsX.bin");
+    Tensor* y_test = Tensor::load("/home/sgd_mpi/data/mnist_tsY.bin");
 
-    if (testing) {
-        std::string _range_ = "0:" + std::to_string(2 * batch_size);
-        Tensor* x_mini_train = x_train->select({_range_, ":"});
-        Tensor* y_mini_train = y_train->select({_range_, ":"});
-        Tensor* x_mini_test  = x_test->select({_range_, ":"});
-        Tensor* y_mini_test  = y_test->select({_range_, ":"});
+    // Computing the size of dataset to be processed by the current rank
+    int train_data_size = x_train->getShape()[0];
+    //int test_data_size = x_test->getShape()[0];
 
-        delete x_train;
-        delete y_train;
-        delete x_test;
-        delete y_test;
-
-        x_train = x_mini_train;
-        y_train = y_mini_train;
-        x_test  = x_mini_test;
-        y_test  = y_mini_test;
-    }
+    int per_rank_train_ds = train_data_size / mpi_size;
+    int start = per_rank_train_ds * mpi_rank;
+    std::string _range_ = std::to_string(start) + ":" + std::to_string(start + per_rank_train_ds);
+    
+    Tensor* x_rank_train = x_train->select({_range_, ":"});
+    Tensor* y_rank_train = y_train->select({_range_, ":"});
+    
+    delete x_train;
+    delete y_train;
 
     // Preprocessing
-    x_train->div_(255.0f);
+    x_rank_train->div_(255.0f);
     x_test->div_(255.0f);
 
     // Train model
-    fit(net, {x_train}, {y_train}, batch_size, epochs);
+    fit(net, {x_rank_train}, {y_rank_train}, batch_size, epochs);
 
-    // Evaluate
-    evaluate(net, {x_test}, {y_test});
+    // Evaluate: Only rank 0 perform evaluation on the test set
+    if (mpi_rank == 0)
+    	evaluate(net, {x_test}, {y_test});
 
     // Release objects, layers, optimizer and computing service are released by the net object
-    delete x_train;
-    delete y_train;
+    delete x_rank_train;
+    delete y_rank_train;
     delete x_test;
     delete y_test;
     delete net;
