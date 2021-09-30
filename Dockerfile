@@ -97,7 +97,8 @@ WORKDIR /home/sgd_mpi
 COPY . /home/sgd_mpi
 RUN chown -R sgd_mpi:sgd_mpi /home/sgd_mpi
 USER sgd_mpi
-RUN cd /home/sgd_mpi/code/utils && sh create_bindings.sh && cd /home/sgd_mpi
+RUN cd /home/sgd_mpi/code/utils && sh create_bindings.sh \ 
+    && sh mnist_download.sh && cd /home/sgd_mpi
 
 ENTRYPOINT \
     sudo service ssh restart \

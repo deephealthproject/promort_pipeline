@@ -38,8 +38,6 @@ def main(args):
     mpi_size = mpe.mpi_size
     mpi_rank = mpe.mpi_rank
 
-    eddl.download_mnist()
-
     num_classes = 10
 
     in_ = eddl.Input([784])
@@ -72,10 +70,10 @@ def main(args):
     # Broadcast initial params
     mpe.Broadcast_params(net)
 
-    x_train = Tensor.load("mnist_trX.bin")
-    y_train = Tensor.load("mnist_trY.bin")
-    x_test = Tensor.load("mnist_tsX.bin")
-    y_test = Tensor.load("mnist_tsY.bin")
+    x_train = Tensor.load("/home/sgd_mpi/data/mnist_trX.bin")
+    y_train = Tensor.load("/home/sgd_mpi/data/mnist_trY.bin")
+    x_test = Tensor.load("/home/sgd_mpi/data/mnist_tsX.bin")
+    y_test = Tensor.load("/home/sgd_mpi/data/mnist_tsY.bin")
     
     train_data_size = x_train.shape[0]
     test_data_size = x_test.shape[0]
