@@ -23,7 +23,7 @@ docker run -d --privileged --name sgd_mpi --gpus '"device=0, 1"' sgd_mpi:latest
 docker exec -ti sgd_mpi /bin/bash
 ```
 
-A file named *hostfile* should be present in the container folder */home/sgd_mpi/code*. This is needed to make mpi aware about how many nodes and how many GPUs per node are available for the distributed computation. The *hostfile* provided contains one line:
+A file named *hostfile* is already present in the container folder */home/sgd_mpi/code*. This is needed to make mpi aware about how many nodes and how many GPUs per node are available for the distributed computation. The *hostfile* provided contains one line:
 *container_HOSTNAME slots=2*
 assuming a computation environment of one node with 2 GPUs.
 
