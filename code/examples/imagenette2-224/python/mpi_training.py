@@ -37,7 +37,7 @@ def run(args):
     size = [p_size, p_size] 
     patience = args.patience
     net_init = 'HeNormal'
-    num_classes = 7
+    num_classes = 10
     
     ## Each node gets its own environment
     

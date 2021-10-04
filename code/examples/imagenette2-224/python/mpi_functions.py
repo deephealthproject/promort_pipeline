@@ -12,6 +12,7 @@ import time
 def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
     
     MP = el.MP
+    mpi_size = MP.mpi_size
     rank = MP.mpi_rank
 
     print(f'Starting train function of Rank {rank}')
@@ -47,12 +48,12 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
     #el.split_setup(seed)
     print(f"Rank: {rank} is reading dataset {yml_fn}")
 
-    d = ecvl.DLDataset(yml_fn, batch_size, dataset_augs)
-    x = Tensor([batch_size, d.n_channels_, size[0], size[1]])
-    y = Tensor([batch_size, len(d.classes_)])
+    d = ecvl.DLDataset(yml_fn, batch_size, dataset_augs, num_workers=20)
+    #x = Tensor([batch_size, d.n_channels_, size[0], size[1]])
+    #y = Tensor([batch_size, len(d.classes_)])
     d.SetSplit(ecvl.SplitType.training)
     num_samples_train = len(d.GetSplit())
-    num_batches_train = num_samples_train // batch_size
+    num_batches_train = num_samples_train // batch_size 
     d.SetSplit(ecvl.SplitType.validation)
     num_samples_val = len(d.GetSplit())
     num_batches_val = num_samples_val // batch_size
@@ -76,18 +77,18 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
         
         ## set split
         d.SetSplit(ecvl.SplitType.training)
-        s = d.GetSplit()
-        random.shuffle(s)
-        d.split_.training_ = s
-        d.ResetAllBatches()
+        d.ResetBatch(d.current_split_, True);
+        d.Start();
 
-        pbar = tqdm(range(num_batches_train))
+        pbar = tqdm(range(num_batches_train * mpi_size))
         
-        for b_index, mb in enumerate(pbar):
+        for b_index, mb in enumerate(range(num_batches_train)):
             # Init local weights to a zero structure equal in size and shape to the global one
 
             t0 = time.time()
-            d.LoadBatch(x, y)
+            samples, x, y = d.GetBatch()
+            
+            #d.LoadBatch(x, y)
             t1 = time.time()
 
             #print (f'load time: {t1-t0}')
@@ -112,7 +113,10 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
                 epoch_loss_l.append(loss)
                 epoch_acc_l.append(acc)
             
+            pbar.update(mpi_size)
+
         ## End of macro batches
+        d.Stop()
         pbar.close()
         
         ######
@@ -128,11 +132,12 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
         epoch_val_loss_l = []
         
         d.SetSplit(ecvl.SplitType.validation) 
+        d.ResetBatch(d.current_split_);
+        d.Start()
+        pbar = tqdm(range(num_batches_val  * mpi_size))
         
-        pbar = tqdm(range(num_batches_val))
-        
-        for b_index, mb in enumerate(pbar):
-            d.LoadBatch(x, y)
+        for b_index, mb in enumerate(range(num_batches_val)):
+            samples, x, y = d.GetBatch()
             x.div_(255.0)
             tx, ty = [x], [y]
                     
@@ -168,7 +173,10 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
                 msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, num_batches_val + 1, b_index, loss, acc)
                 pbar.set_postfix_str(msg)
             
+            pbar.update(mpi_size)
+
         ## End of macro batches
+        d.Stop()
         pbar.close()
         
         # Compute Epoch loss and acc and store history

@@ -51,7 +51,7 @@ class EnvLoader():
 
     def aug_setup(self):
         training_augs = ecvl.SequentialAugmentationContainer([
-        ecvl.AugResizeDim(self.size),
+        #ecvl.AugResizeDim(self.size),
         #ecvl.AugMirror(.5),
         #ecvl.AugFlip(.5),
         #ecvl.AugRotate([-180, 180]),
@@ -62,12 +62,16 @@ class EnvLoader():
         ])
     
         validation_augs = ecvl.SequentialAugmentationContainer([
-        ecvl.AugResizeDim(self.size),
+        #ecvl.AugResizeDim(self.size),
         ])
         
         self.dataset_augs = ecvl.DatasetAugmentations(
         [training_augs, validation_augs, None]
         )
+
+        #self.dataset_augs = ecvl.DatasetAugmentations(
+        #[None, None, None]
+        #)
 
     def yml_setup(self):
         for r in range(self.MP.mpi_size):
