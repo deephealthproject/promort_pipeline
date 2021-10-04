@@ -14,7 +14,7 @@ import sys
 from OPT_MPI import mpi_env
 
 # Run with:
-# mpirun --bind-to none -n 2 --hostfile /home/sgd_mpi/code/hostfile python3 mpi_training.py --yml-in /home/sgd_mpi/data/isic_classification_2018/isic_classification_2018.yml  --gpu 1 1 --batch-size 28
+# mpirun --bind-to none -n 2 --hostfile /home/sgd_mpi/code/hostfile python3 mpi_training.py --yml-in /home/sgd_mpi/data/imagenette2-224/imagenette2-224.yaml --gpu 1 1 --batch-size 28
 
 def run(args):
     # Parse GPU

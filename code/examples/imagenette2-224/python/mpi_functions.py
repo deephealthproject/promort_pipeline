@@ -82,7 +82,7 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
 
         pbar = tqdm(range(num_batches_train * mpi_size))
         
-        for b_index, mb in enumerate(range(num_batches_train)):
+        for mb in range(num_batches_train):
             # Init local weights to a zero structure equal in size and shape to the global one
 
             t0 = time.time()
@@ -108,7 +108,7 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
             acc = MP.Gather_and_average(acc)
             
             if rank == 0:
-                msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, num_batches_train + 1, b_index, loss, acc)
+                msg = "Epoch {:d}/{:d} - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, loss, acc)
                 pbar.set_postfix_str(msg)
                 epoch_loss_l.append(loss)
                 epoch_acc_l.append(acc)
@@ -136,7 +136,7 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
         d.Start()
         pbar = tqdm(range(num_batches_val  * mpi_size))
         
-        for b_index, mb in enumerate(range(num_batches_val)):
+        for mb in range(num_batches_val):
             samples, x, y = d.GetBatch()
             x.div_(255.0)
             tx, ty = [x], [y]
@@ -170,7 +170,7 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
                 # Only rank 0 print progression bar
                 epoch_val_loss_l.append(loss)
                 epoch_val_acc_l.append(acc)
-                msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, num_batches_val + 1, b_index, loss, acc)
+                msg = "Epoch {:d}/{:d} - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, loss, acc)
                 pbar.set_postfix_str(msg)
             
             pbar.update(mpi_size)
