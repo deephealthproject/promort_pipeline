@@ -1,4 +1,4 @@
-FROM dhealth/pylibs-toolkit:0.10.1-cudnn
+FROM dhealth/pylibs-toolkit:0.11.0-cudnn
 
 # use custom pyeddl with bind_optimizers
 RUN \
@@ -92,6 +92,9 @@ RUN \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m sgd_mpi \
     && echo "sgd_mpi ALL=(ALL:ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/sgd_mpi
+
+RUN \
+    pip install tqdm, pyyaml, gdown
 
 WORKDIR /home/sgd_mpi
 COPY . /home/sgd_mpi

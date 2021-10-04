@@ -1,0 +1,190 @@
+import os, sys
+
+from tqdm import trange, tqdm
+import numpy as np
+import pyecvl.ecvl as ecvl
+import pyeddl.eddl as eddl
+from pyeddl.tensor import Tensor
+import random
+import pickle
+import time
+
+def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
+    
+    MP = el.MP
+    rank = MP.mpi_rank
+
+    print(f'Starting train function of Rank {rank}')
+
+    # Get Environment
+    el.start(seed)
+    net = el.net
+    yml_fn = el.per_rank_yml_l[rank]
+    dataset_augs = el.dataset_augs
+    batch_size = el.batch_size 
+    size = el.size
+    out = net.layers[-1]
+
+    ###################
+    ## Training step ##
+    ###################
+    
+    if rank == 0: # Only task 0 takes account of whole stats
+        loss_l = []
+        acc_l = []
+        val_loss_l = []
+        val_acc_l = []
+        
+        patience_cnt = 0
+        val_acc_max = 0.0
+
+    acc_fn = eddl.getMetric("categorical_accuracy")
+    loss_fn = eddl.getLoss("soft_cross_entropy")
+    
+    ### Main loop across epochs
+    
+    ## Make the split setup before the main loop. Then mix only training splits
+    #el.split_setup(seed)
+    print(f"Rank: {rank} is reading dataset {yml_fn}")
+
+    d = ecvl.DLDataset(yml_fn, batch_size, dataset_augs)
+    x = Tensor([batch_size, d.n_channels_, size[0], size[1]])
+    y = Tensor([batch_size, len(d.classes_)])
+    d.SetSplit(ecvl.SplitType.training)
+    num_samples_train = len(d.GetSplit())
+    num_batches_train = num_samples_train // batch_size
+    d.SetSplit(ecvl.SplitType.validation)
+    num_samples_val = len(d.GetSplit())
+    num_batches_val = num_samples_val // batch_size
+    
+    print (f'Rank {rank}. Train samples: {num_samples_train}, train batches: {num_batches_train}, val samples: {num_samples_val}, val batches: {num_batches_val}')
+
+    for e in range(epochs):
+        ####
+        ### Training 
+        ####
+        if rank == 0:
+            print ("\n\n\n*** Training ***")
+            epoch_acc_l = []
+            epoch_loss_l = []
+            epoch_val_acc_l = []
+            epoch_val_loss_l = []
+
+        ### Recreate splits to shuffle among workers but with the same seed to get same splits
+        eddl.reset_loss(net)
+        seed = random.getrandbits(32)
+        
+        ## set split
+        d.SetSplit(ecvl.SplitType.training)
+        s = d.GetSplit()
+        random.shuffle(s)
+        d.split_.training_ = s
+        d.ResetAllBatches()
+
+        pbar = tqdm(range(num_batches_train))
+        
+        for b_index, mb in enumerate(pbar):
+            # Init local weights to a zero structure equal in size and shape to the global one
+
+            t0 = time.time()
+            d.LoadBatch(x, y)
+            t1 = time.time()
+
+            #print (f'load time: {t1-t0}')
+
+            x.div_(255.0)
+            tx, ty = [x], [y]
+                    
+            #print (f'Train batch rank: {rank}, ep: {e}, macro_batch: {mb}, local training rank: {lt}, inidipendent iteration: {s_it}') 
+            eddl.train_batch(net, tx, ty)
+            
+            net_out = eddl.getOutput(net.layers[-1]).getdata() 
+            loss = eddl.get_losses(net)[0]
+            acc = eddl.get_metrics(net)[0]
+        
+            # Loss and accuracy synchronization among ranks
+            loss = MP.Gather_and_average(loss)
+            acc = MP.Gather_and_average(acc)
+            
+            if rank == 0:
+                msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, num_batches_train + 1, b_index, loss, acc)
+                pbar.set_postfix_str(msg)
+                epoch_loss_l.append(loss)
+                epoch_acc_l.append(acc)
+            
+        ## End of macro batches
+        pbar.close()
+        
+        ######
+        ## Validation 
+        ######
+        if rank == 0:
+            print ("\n\n\n*** Evaluation ***")
+
+        eddl.reset_loss(net)
+        seed = random.getrandbits(32)
+        
+        epoch_val_acc_l = []
+        epoch_val_loss_l = []
+        
+        d.SetSplit(ecvl.SplitType.validation) 
+        
+        pbar = tqdm(range(num_batches_val))
+        
+        for b_index, mb in enumerate(pbar):
+            d.LoadBatch(x, y)
+            x.div_(255.0)
+            tx, ty = [x], [y]
+                    
+            #print (f'Train batch rank: {rank}, ep: {e}, macro_batch: {mb}, local training rank: {lt}, inidipendent iteration: {s_it}') 
+            eddl.forward(net, tx)
+            
+            net_out = eddl.getOutput(net.layers[-1]) 
+       
+            sum_ca = 0.0 ## sum of samples accuracy within a batch
+            sum_ce = 0.0 ## sum of losses within a batch
+
+            n = 0
+            for k in range(x.getShape()[0]):
+                result = net_out.select([str(k)])
+                target = y.select([str(k)])
+                ca = acc_fn.value(target, result)
+                ce = loss_fn.value(target, result)
+                sum_ca += ca
+                sum_ce += ce
+                n += 1
+            
+            loss = (sum_ce / n)
+            acc = (sum_ca / n)
+            
+            # Loss and accuracy synchronization among ranks
+            loss = MP.Gather_and_average(loss)
+            acc = MP.Gather_and_average(acc)
+
+            if rank == 0:
+                # Only rank 0 print progression bar
+                epoch_val_loss_l.append(loss)
+                epoch_val_acc_l.append(acc)
+                msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, num_batches_val + 1, b_index, loss, acc)
+                pbar.set_postfix_str(msg)
+            
+        ## End of macro batches
+        pbar.close()
+        
+        # Compute Epoch loss and acc and store history
+        if rank == 0:
+            loss_l.append(np.mean(epoch_loss_l))
+            acc_l.append(np.mean(epoch_acc_l))
+            val_loss_l.append(np.mean(epoch_val_loss_l))
+            val_acc_l.append(np.mean(epoch_val_acc_l))
+
+            if out_dir:
+                history = {'loss': loss_l, 'acc': acc_l, 'val_loss': val_loss_l, 'val_acc': val_acc_l}
+                pickle.dump(history, open(os.path.join(out_dir, 'history.pickle'), 'wb'))
+        
+
+    ## End of Epochs
+    if rank == 0:
+        return loss_l, acc_l, val_loss_l, val_acc_l
+    else:
+        return None, None, None, None
