@@ -6,8 +6,8 @@ A working environment is provided by the *Dockerfile* in the parent folder, whic
 
 The **code** folder has the following sub-directories:
  * **opt_mpi**: The *cpp* sub-folder includes the code to implement mpi functionalities along with the extension of the SGD optimizer. The *pybind* sub-folder includes the code to create python bindings
- * **cpp**: *cpp* code of the mnist example
- * **python**: *python* code of the mnist example  
+ * **examples**: code of the mnist and imagenette examples
+ * **utils**: some utility scripts to create python bindings, download datasets and generate yaml files starting from a dataset directory.  
 
 ## How to Run the Docker container to test the examples
 Run the following command from the parent folder to create the docker image and run the container:
@@ -28,15 +28,4 @@ HOSTNAME slots=2
 ```
 assuming a computation environment of one node with 2 GPUs.
 
-## Running the CPP example:
-```bash
-cd /home/sgd_mpi/code/cpp
-make
-mpirun --n 2 --hostfile ../hostfile mnist_mpi
-```
-
-## Running the Python example:
-```bash
-cd /home/sgd_mpi/code/python
-mpirun --n 2 --hostfile ../hostfile python3 mnist_mlp.py --gpu
-```
+To run the examples read the **README** present on each example subfolder.
