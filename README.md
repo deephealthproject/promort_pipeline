@@ -28,4 +28,4 @@ HOSTNAME slots=2
 ```
 assuming a computation environment of one node with 2 GPUs.
 
-To run the examples read the **README** present in each example subfolder ([mnist](code/examples/mnist), [imagenette](imagenette2-224/python)). 
+To run the examples read the **README** present in each example subfolder ([mnist](code/examples/mnist), [imagenette](code/imagenette2-224/python)). 
