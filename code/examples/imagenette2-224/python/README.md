@@ -1,6 +1,8 @@
-
-
 ## Running the example:
+```bash
+export HALF_CORES=$(python3 /home/sgd_mpi/code/utils/half_cores.py)
+```
+
 without data augmentations:
 ```bash
 cd /home/sgd_mpi/code/examples/imagenette2-224/python
