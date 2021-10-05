@@ -22,10 +22,10 @@ docker run --cap-add=IPC_LOCK --cap-add=SYS_RESOURCE -d --rm --name sgd_mpi --gp
 docker exec -ti sgd_mpi /bin/bash
 ```
 
-A file named *hostfile* is already present in the container folder */home/sgd_mpi/code*. This is needed to make mpi aware about how many nodes and how many GPUs per node are available for the distributed computation. The *hostfile* provided contains one line:
+A file named *hostfile* is already present in the container folder */home/sgd_mpi/code*. This is needed to make MPI aware about how many nodes and how many GPUs per node are available for the distributed computation. The *hostfile* provided contains one line:
 ```
 HOSTNAME slots=2
 ```
 assuming a computation environment of one node with 2 GPUs.
 
-To run the examples read the **README** present on each example subfolder.
+To run the examples read the **README** present in each example subfolder ([mnist](code/examples/mnist), [imagenette](imagenette2-224/python)). 
