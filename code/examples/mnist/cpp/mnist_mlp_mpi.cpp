@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
     } else {
         std::vector<int> gpu_mask(mpi_size, 0);
 	gpu_mask[mpi_rank % mpi_size] = 1;
-	cs = CS_GPU(gpu_mask, "low_mem"); // one GPU
+	cs = CS_GPU(gpu_mask, "full_mem"); // one GPU
     }
 
     SGD_mpi* opt = new SGD_mpi(MPE, 0.01);
