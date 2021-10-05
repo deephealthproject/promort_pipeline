@@ -12,7 +12,7 @@ from OPT_MPI import mpi_env, sgd_mpi
 import subprocess
 
 class EnvLoader():
-    def __init__(self, in_yml, n_sync, batch_size, net_init,
+    def __init__(self, in_yml, n_sync, batch_size, net_init, augs_on,
                  net_name, size, num_classes, lr, gpus,
                  dropout, l2_reg, seed):
         
@@ -20,6 +20,7 @@ class EnvLoader():
         self.yml = in_yml
         self.per_rank_yml_l = []
         self.dataset_aug = None
+        self.augs_on = augs_on
         self.num = self.MP.mpi_size
         self.batch_size = batch_size
         self.seed = seed
@@ -50,28 +51,33 @@ class EnvLoader():
             self.net_setup()
 
     def aug_setup(self):
-        training_augs = ecvl.SequentialAugmentationContainer([
-        #ecvl.AugResizeDim(self.size),
-        #ecvl.AugMirror(.5),
-        #ecvl.AugFlip(.5),
-        #ecvl.AugRotate([-180, 180]),
-        #ecvl.AugAdditivePoissonNoise([0, 10]),
-        #ecvl.AugGammaContrast([0.5, 1.5]),
-        #ecvl.AugGaussianBlur([0, 0.8]),
-        #ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5)
-        ])
-    
-        validation_augs = ecvl.SequentialAugmentationContainer([
-        #ecvl.AugResizeDim(self.size),
-        ])
+        if self.augs_on:
+            training_augs = ecvl.SequentialAugmentationContainer([
+            #ecvl.AugResizeDim(self.size),
+            ecvl.AugMirror(.5),
+            ecvl.AugFlip(.5),
+            ecvl.AugRotate([-180, 180]),
+            ecvl.AugAdditivePoissonNoise([0, 10]),
+            ecvl.AugGammaContrast([0.5, 1.5]),
+            ecvl.AugGaussianBlur([0, 0.8]),
+            ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5)
+            ])
         
+            validation_augs = ecvl.SequentialAugmentationContainer([
+            #ecvl.AugResizeDim(self.size),
+            ])
+            
+            self.dataset_augs = ecvl.DatasetAugmentations(
+            [training_augs, validation_augs, None]
+            )
+        
+        else:
+            training_augs = ecvl.SequentialAugmentationContainer([])
+            validation_augs = ecvl.SequentialAugmentationContainer([])
+
         self.dataset_augs = ecvl.DatasetAugmentations(
         [training_augs, validation_augs, None]
         )
-
-        #self.dataset_augs = ecvl.DatasetAugmentations(
-        #[None, None, None]
-        #)
 
     def yml_setup(self):
         for r in range(self.MP.mpi_size):

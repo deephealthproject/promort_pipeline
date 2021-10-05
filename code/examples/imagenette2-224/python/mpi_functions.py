@@ -9,6 +9,33 @@ import random
 import pickle
 import time
 
+def cross_entropy(predictions, targets, epsilon=1e-12):
+    """
+    Computes cross entropy between targets (encoded as one-hot vectors)
+    and predictions.
+    Input: predictions (N, k) ndarray
+           targets (N, k) ndarray
+    Returns: scalar
+    """
+    predictions = np.clip(predictions, epsilon, 1.0 - epsilon)
+    N = predictions.shape[0]
+    ce = -np.sum(targets * np.log(predictions + 1e-9)) / N
+    return ce
+
+
+def accuracy(predictions, targets, epsilon=1e-12):
+    """
+    Computes accuracy between targets (encoded as one-hot vectors)
+    and predictions.
+    Input: predictions (N, k) ndarray
+           targets (N, k) ndarray
+    Returns: scalar
+    """
+    predictions = np.clip(predictions, epsilon, 1.0 - epsilon)
+    N = predictions.shape[0]
+    ce = np.sum((targets * predictions) + 1e-9) / N
+    return ce
+
 def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
     
     MP = el.MP
@@ -135,7 +162,7 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
         d.ResetBatch(d.current_split_);
         d.Start()
         pbar = tqdm(range(num_batches_val  * mpi_size))
-        
+         
         for mb in range(num_batches_val):
             samples, x, y = d.GetBatch()
             x.div_(255.0)
@@ -145,32 +172,25 @@ def train(el, epochs, lr, gpus, dropout, l2_reg, seed, out_dir):
             eddl.forward(net, tx)
             
             net_out = eddl.getOutput(net.layers[-1]) 
-       
-            sum_ca = 0.0 ## sum of samples accuracy within a batch
-            sum_ce = 0.0 ## sum of losses within a batch
-
-            n = 0
-            for k in range(x.getShape()[0]):
-                result = net_out.select([str(k)])
-                target = y.select([str(k)])
-                ca = acc_fn.value(target, result)
-                ce = loss_fn.value(target, result)
-                sum_ca += ca
-                sum_ce += ce
-                n += 1
             
-            loss = (sum_ce / n)
-            acc = (sum_ca / n)
+            result = net_out.getdata()
+            target = y.getdata()
+            sum_ca = accuracy(result, target)
+            sum_ce = cross_entropy(result, target)
+
+            loss = (sum_ce / mpi_size)
+            acc = (sum_ca / mpi_size)
             
             # Loss and accuracy synchronization among ranks
             loss = MP.Gather_and_average(loss)
             acc = MP.Gather_and_average(acc)
-
+            
             if rank == 0:
                 # Only rank 0 print progression bar
                 epoch_val_loss_l.append(loss)
                 epoch_val_acc_l.append(acc)
-                msg = "Epoch {:d}/{:d} - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, loss, acc)
+                msg = "Epoch {:d}/{:d} - loss: {:.3f}, acc: {:.3f}".format(e + 1, epochs, np.mean(epoch_val_loss_l), np.mean(epoch_val_acc_l))
+
                 pbar.set_postfix_str(msg)
             
             pbar.update(mpi_size)

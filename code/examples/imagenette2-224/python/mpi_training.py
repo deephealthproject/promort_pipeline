@@ -27,6 +27,7 @@ def run(args):
     epochs = args.epochs
     n_sync = args.sync_iterations
     lr = args.lr
+    augs_on = args.augs_on
     batch_size = args.batch_size
     dropout = args.dropout
     l2_reg = args.l2_reg
@@ -41,7 +42,7 @@ def run(args):
     
     ## Each node gets its own environment
     
-    el = EnvLoader(in_yml, n_sync, batch_size, net_init,
+    el = EnvLoader(in_yml, n_sync, batch_size, net_init, augs_on,
                  net_name, size, num_classes, lr, gpus,
                  dropout, l2_reg, seed)
 
@@ -74,6 +75,8 @@ if __name__ == "__main__":
                         default=1, help='Number of step between weights sync')
     parser.add_argument("--patch-size", type=int, metavar="INT",
                         default=224, help='Patch side size')
+    parser.add_argument("--augs-on", action="store_true",
+                        help='Activate data augmentation')
     parser.add_argument("--patience", type=int, metavar="INT", default=20,
                         help='Number of epochs after which the training is stopped if validation accuracy does not improve (delta=0.001)')
     parser.add_argument("--batch-size", type=int,
@@ -81,7 +84,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, metavar="INT", default=None,
                         help='Seed of the random generator to manage data load')
     parser.add_argument("--lr", type=float, metavar="FLOAT",
-                        default=1e-5, help='Learning rate')
+                        default=1e-3, help='Learning rate')
     parser.add_argument("--dropout", type=float, metavar="FLOAT",
                         default=None, help='Float value (0-1) to specify the dropout ratio')
     parser.add_argument("--l2-reg", type=float, metavar="FLOAT",
