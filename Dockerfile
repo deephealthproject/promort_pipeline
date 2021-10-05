@@ -96,14 +96,18 @@ RUN \
 
 RUN pip3 install --upgrade --no-cache pip \
     &&  pip3 install --upgrade --no-cache tqdm \ 
-    &&  pip3 install --upgrade --no-cache pyyaml  
+    &&  pip3 install --upgrade --no-cache pyyaml \ 
+    &&  pip3 install --upgrade --no-cache psutil  
 
 WORKDIR /home/sgd_mpi
 COPY . /home/sgd_mpi
 RUN chown -R sgd_mpi:sgd_mpi /home/sgd_mpi
 USER sgd_mpi
+
 RUN cd /home/sgd_mpi/code/utils && sh create_bindings.sh \ 
-    && sh mnist_download.sh && sh imagenette_download.sh && cd /home/sgd_mpi
+    && sh mnist_download.sh && sh imagenette_download.sh \
+    && cd /home/sgd_mpi
+
 
 ENTRYPOINT \
     sudo service ssh restart \
