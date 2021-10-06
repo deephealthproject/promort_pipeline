@@ -81,11 +81,9 @@ class EnvLoader():
 
     def yml_setup(self):
         for r in range(self.MP.mpi_size):
-            fn = os.path.splitext(self.yml)[0] + '_%d' % r + '.yml'
+            fn = os.path.splitext(self.yml)[0] + '_%d' % self.MP.mpi_rank + '_%d' % r + '.yml'
             self.per_rank_yml_l.append(fn)
-        if self.MP.mpi_rank == 0: 
-            ## Only rank 0 create per rank yml files
-            self.get_per_rank_yaml()
+        self.get_per_rank_yaml()
 
     def get_per_rank_yaml(self):
         fn = self.yml
