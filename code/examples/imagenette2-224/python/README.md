@@ -3,13 +3,13 @@
 export HALF_CORES=$(python3 /home/sgd_mpi/code/utils/half_cores.py)
 ```
 
-without data augmentations:
+without data augmentations with 2 GPUs:
 ```bash
 cd /home/sgd_mpi/code/examples/imagenette2-224/python
 mpirun --map-by node:pe=$HALF_CORES --bind-to core -n 2 --hostfile /home/sgd_mpi/code/hostfile python3 mpi_training.py --yml-in /home/sgd_mpi/data/imagenette2-224/imagenette2-224.yaml --gpu 1 1 --batch-size 28 
 ```
 
-with data augmentations:
+with data augmentations with 2 GPUs:
 ```bash
 cd /home/sgd_mpi/code/examples/imagenette2-224/python
 mpirun --map-by node:pe=$HALF_CORES --bind-to core -n 2 --hostfile /home/sgd_mpi/code/hostfile python3 mpi_training.py --yml-in /home/sgd_mpi/data/imagenette2-224/imagenette2-224.yaml --gpu 1 1 --batch-size 28 --augs-on
