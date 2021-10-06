@@ -15,6 +15,12 @@ cd /home/sgd_mpi/code/examples/imagenette2-224/python
 mpirun --map-by node:pe=$HALF_CORES --bind-to core -n 2 --hostfile /home/sgd_mpi/code/hostfile python3 mpi_training.py --yml-in /home/sgd_mpi/data/imagenette2-224/imagenette2-224.yaml --gpu 1 1 --batch-size 28 --augs-on
 ```
 
+without data augmentations with only 1 GPU:
+```bash
+cd /home/sgd_mpi/code/examples/imagenette2-224/python
+mpirun --map-by node:pe=$HALF_CORES --bind-to core -n 1 --hostfile /home/sgd_mpi/code/hostfile python3 mpi_training.py --yml-in /home/sgd_mpi/data/imagenette2-224/imagenette2-224.yaml --gpu 1 --batch-size 28 
+```
+
 in general the program options are:
 ```
 usage: mpi_training.py [-h] --yml-in DIR [--epochs INT]
