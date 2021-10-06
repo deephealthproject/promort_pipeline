@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
 	cs = CS_GPU(gpu_mask, "full_mem"); // one GPU
     }
 
-    SGD_mpi* opt = new SGD_mpi(MPE, 0.01);
+    SGD_mpi* opt = new SGD_mpi(MPE, 0.01, 0.9, 0.0, false);
 
     // Build model
     build(net,
