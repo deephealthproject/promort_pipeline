@@ -12,6 +12,12 @@ The **code** folder has the following sub-directories:
 ## How to Run the Docker container to test the examples
 Run the following commands from the parent folder to create the docker image and run the container:
 ```bash
+### Clone the repository
+git clone https://github.com/deephealthproject/promort_pipeline.git
+
+### Switch to sgd_mpi branch
+git checkout sgd_mpi
+
 ### Create the docker image
 docker build -t sgd_mpi .
 
