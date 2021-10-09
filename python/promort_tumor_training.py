@@ -22,6 +22,9 @@
 PROMORT training model application.
 """
 
+### Command line example
+# python3 promort_tumor_training.py  --init-weights-fn keras/vgg16_imagenet_init_onlyconv.bin --epochs 50 --patience 20 --batch-size 64 --val-split-indexes 8 --test-split-indexes 9 --dropout 0.5 --save-weights --out-dir /tmp/promort_training_test --splits-fn cassandra_splits/10_splits/cosk_l1_bal_tcr_0.80_1.00.pckl --gpu 1
+
 import argparse
 import random
 import sys
