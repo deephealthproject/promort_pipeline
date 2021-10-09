@@ -133,8 +133,8 @@ def main(args):
 
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    #cd = CassandraDataset(ap, ['cassandra_db'])
-    cd = CassandraDataset(ap, ['127.0.0.1'], seed=args.seed)
+    cd = CassandraDataset(ap, ['cassandra_db'], seed=args.seed)
+    #cd = CassandraDataset(ap, ['127.0.0.1'], seed=args.seed)
 
     # Check if file exists
     if Path(args.splits_fn).exists():
