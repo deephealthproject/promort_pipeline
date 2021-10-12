@@ -36,9 +36,12 @@ import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
 
-from cassandra_dataset import CassandraDataset
 
+#from cassandra_dataset import CassandraDataset
+#from cassandra.auth import PlainTextAuthProvider
+import cassandradl as cdl
 from cassandra.auth import PlainTextAuthProvider
+
 from getpass import getpass
 from tqdm import trange, tqdm
 import numpy as np
@@ -136,7 +139,7 @@ def main(args):
 
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['cassandra_db'], seed=args.seed)
+    cd = cdl.CassandraDataset(ap, ['156.148.70.72'], seed=args.seed)
     #cd = CassandraDataset(ap, ['127.0.0.1'], seed=args.seed)
 
     # Check if file exists
