@@ -39,7 +39,7 @@ from pyeddl.tensor import Tensor
 
 #from cassandra_dataset import CassandraDataset
 #from cassandra.auth import PlainTextAuthProvider
-import cassandradl as cdl
+from cassandradl import CassandraDataset
 from cassandra.auth import PlainTextAuthProvider
 
 from getpass import getpass
@@ -139,7 +139,7 @@ def main(args):
 
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = cdl.CassandraDataset(ap, ['156.148.70.72'], seed=args.seed)
+    cd = CassandraDataset(ap, ['156.148.70.72'], seed=args.seed)
     #cd = CassandraDataset(ap, ['127.0.0.1'], seed=args.seed)
 
     # Check if file exists
@@ -321,7 +321,7 @@ if __name__ == "__main__":
     parser.add_argument("--test-split-indexes", type=int, nargs='+', default=[], help='List of split indexs to be used as validation set in case of a multisplit dataset (e.g. for cross validation purpose')
     parser.add_argument("--lsb", type=int, metavar="INT", default=1, help='(Multi-gpu setting) Number of batches to run before synchronizing the weights of the different GPUs')
     parser.add_argument("--seed", type=int, metavar="INT", default=None, help='Seed of the random generator to manage data load')
-    parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-5, help='Learning rate')
+    parser.add_argument("--lr", type=float, metavar="FLOAT", default=1e-6, help='Learning rate')
     parser.add_argument("--lr_end", type=float, metavar="FLOAT", default=1e-2, help='Final learning rate. To be used with find-opt-lr option to scan learning rates')
     parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None, help='Float value (0-1) to specify the dropout ratio' )
     parser.add_argument("--l2-reg", type=float, metavar="FLOAT", default=None, help='L2 regularization parameter')
