@@ -57,6 +57,8 @@ def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=Fa
     
     if net_name == 'vgg16':
         out = models.VGG16_promort(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
+    elif net_name == 'resnet50':
+        out = models.ResNet50(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
     else:
         print('model %s not available' % net_name)
         sys.exit(-1)
@@ -67,9 +69,7 @@ def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=Fa
         eddl.rmsprop(lr),
         ["soft_cross_entropy"],
         ["categorical_accuracy"],
-        #eddl.CS_GPU([1,1], mem="low_mem") if gpu else eddl.CS_CPU()
         eddl.CS_GPU(gpus, mem="low_mem", lsb=lsb) if gpus else eddl.CS_CPU()
-        #eddl.CS_GPU(gpus, mem="low_mem") if gpus else eddl.CS_CPU()
         )
 
     eddl.summary(net)
@@ -95,10 +95,12 @@ def get_net(net_name='vgg16', in_size=[256,256], num_classes=2, lr=1e-5, augs=Fa
 
 
 def main(args):
-    net_name = "vgg16"
     num_classes = 2
     size = [256, 256]  # size of images
-    
+   
+    ### Net name
+    net_name = args.net_name
+
     ### Parse GPU
     if args.gpu:
         gpus = [int(i) for i in args.gpu]
@@ -108,7 +110,7 @@ def main(args):
     print ('GPUs mask: %r' % gpus)
     ### Get Network
     net_init = eddl.HeNormal
-    net, dataset_augs = get_net(net_name='vgg16', in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpus=gpus, lsb=args.lsb, init=net_init, dropout=args.dropout, l2_reg=args.l2_reg)
+    net, dataset_augs = get_net(net_name=net_name, in_size=size, num_classes=num_classes, lr=args.lr, augs=args.augs_on, gpus=gpus, lsb=args.lsb, init=net_init, dropout=args.dropout, l2_reg=args.l2_reg)
     out = net.layers[-1]
     
     ## Load weights if requested
@@ -141,7 +143,7 @@ def main(args):
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
     cd = CassandraDataset(ap, ['156.148.70.72'], seed=args.seed)
     #cd = CassandraDataset(ap, ['127.0.0.1'], seed=args.seed)
-
+    
     # Check if file exists
     if Path(args.splits_fn).exists():
         # Load splits 
@@ -229,16 +231,19 @@ def main(args):
     
             x.div_(255.0)
             tx, ty = [x], [y]
-            eddl.train_batch(net, tx, ty)
-            
+            try:
+                eddl.train_batch(net, tx, ty)
+            except:
+                print (x.getShape())
+                print (y.getShape())
+
             #print bratch train results
-            instances = (b_index+1) * args.batch_size
             loss = eddl.get_losses(net)[0]
             metr = eddl.get_metrics(net)[0]
-            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, args.epochs, b + 1, num_batches_tr, loss, metr)
-            pbar.set_postfix_str(msg)
             total_loss.append(loss)
             total_metric.append(metr)
+            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, args.epochs, b + 1, num_batches_tr, np.mean(total_loss), np.mean(total_metric))
+            pbar.set_postfix_str(msg)
     
         loss_l.append(np.mean(total_loss))
         acc_l.append(np.mean(total_metric))
@@ -337,4 +342,6 @@ if __name__ == "__main__":
                         help="Pickle file with cassandra splits")
     parser.add_argument("--cassandra-pwd-fn", metavar="STR", default='/tmp/cassandra_pass.txt',
                         help="cassandra password")
+    parser.add_argument("--net-name", metavar="STR", default='vgg16',
+                        help="Select the neural net (vgg16|resnet50)")
     main(parser.parse_args())
