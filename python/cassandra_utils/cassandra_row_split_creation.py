@@ -7,7 +7,7 @@ import sys
 import os
 from pathlib import Path
 
-from cassandra_dataset import CassandraDataset
+from cassandradl import CassandraDataset
 
 from cassandra.auth import PlainTextAuthProvider
 from getpass import getpass
@@ -36,7 +36,7 @@ def main(args):
 
     # create cassandra reader
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['127.0.0.1'])
+    cd = CassandraDataset(ap, ['cassandra-db'])
 
     cd.init_listmanager(metatable='promort.' + args.metatable,
                         table = 'promort.' + args.ids_table,
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("--split-ncols", type=int, metavar="INT", default=1)
     parser.add_argument("--num-classes", type=int, metavar="INT", default=2)
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32)
-    parser.add_argument("--split-ratios", nargs='+', type=int, default="[7, 2, 1]")
+    parser.add_argument("--split-ratios", nargs='+', type=int, default="7 2 1")
     parser.add_argument("--data-size", type=int, metavar="INT", default=100000)
     parser.add_argument("--balanced", action="store_true", help='returns balanced splits')
     parser.add_argument("--out-dir", metavar="DIR", default='/tmp',

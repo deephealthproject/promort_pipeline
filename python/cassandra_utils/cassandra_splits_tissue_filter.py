@@ -1,7 +1,7 @@
 import argparse
 import sys, os
 
-from cassandra_dataset import CassandraDataset
+from cassandradl import CassandraDataset
 from cassandra.auth import PlainTextAuthProvider
 from getpass import getpass
 
@@ -31,7 +31,7 @@ def main(args):
     with open(cassandra_pwd_fn) as fd:
         cass_pass = fd.readline().rstrip()
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['127.0.0.1'])
+    cd = CassandraDataset(ap, ['cassandra-db'])
 
     cd.load_splits(splits_fn, batch_size=32, augs=[])
     
