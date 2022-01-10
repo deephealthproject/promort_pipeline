@@ -130,6 +130,9 @@ def main(args):
     eddl.reset_loss(net)
     metric = eddl.getMetric("categorical_accuracy") 
     
+    ## Set net to test mode
+    eddl.set_mode(net, 0)
+    
     ### Evaluation on validation set batches
     total_metric = []
     
