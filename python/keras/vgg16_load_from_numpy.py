@@ -13,11 +13,20 @@ from pyeddl.tensor import Tensor
 
 import models 
 
-def get_net(in_size=[256,256], num_classes=2, lr=1e-5, gpu=True):
+def get_net(in_size=[256,256], num_classes=2, lr=1e-5, net_name='vgg16_tumor', gpu=True):
     
     ## Network definition
     in_ = eddl.Input([3, in_size[0], in_size[1]])
-    out = models.VGG16_promort(in_, num_classes)
+    if net_name == 'vgg16_tumor':
+        out = models.VGG16_tumor(in_, num_classes)
+    elif net_name == 'vgg16_gleason':
+        out = models.VGG16_gleason(in_, num_classes)
+    elif net_name == 'vgg16':
+        out = models.VGG16(in_, num_classes)
+    else:
+        print('model %s not available' % net_name)
+        sys.exit(-1)
+
     net = eddl.Model([in_], [out])
     eddl.build(
         net,
@@ -157,8 +166,10 @@ def check_params(keras_params_d, net, include_top=False):
         
 
 def main(args):
+    num_classes = args.num_classes
     ### Get Network
-    net = get_net()
+    net = get_net(num_classes=num_classes, net_name=args.net_name)
+
     keras_params_d = pickle.load(open(args.in_fn, 'rb'))
    
     # Copy keras parameters to the eddl convolutional layers
@@ -178,4 +189,8 @@ if __name__ == "__main__":
                         help="Include dense classifier weights")
     parser.add_argument("--out-fn", metavar="DIR", default = "vgg16_weights.bin",
                         help="output weights filename")
+    parser.add_argument("--num-classes", type=int, metavar="INT", default = 2,
+                        help="Number of categories")
+    parser.add_argument("--net-name", metavar="STR", default='vgg16_tumor',
+                        help="Select the neural net (vgg16|vgg16_tumor|vgg16_gleason)")
     main(parser.parse_args())
