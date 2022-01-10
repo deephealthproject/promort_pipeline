@@ -20,7 +20,7 @@ def main(args):
     print ("ids_table: %s" % args.ids_table)
     print ("metatable: %s" % args.metatable)
     print ("splits: %r" % args.split_ratios)
-    print ("partition_cols: %r" % args.partition_cols)
+    print ("grouping_cols: %r" % args.grouping_cols)
 
 
 
@@ -38,13 +38,15 @@ def main(args):
     ap = PlainTextAuthProvider(username='prom', password=cass_pass)
     cd = CassandraDataset(ap, ['cassandra-db'])
 
-    cd.init_listmanager(metatable='promort.' + args.metatable,
-                        table = 'promort.' + args.ids_table,
+    grouping_cols = ['sample_name']
+
+    cd.init_listmanager(table='promort.' + args.ids_table, 
+                        metatable='promort.' + args.metatable, 
                         id_col='patch_id',
-                        split_ncols=args.split_ncols, 
                         num_classes=args.num_classes, 
-                        partition_cols=args.partition_cols)
-    
+                        label_col=args.label,
+                        grouping_cols=args.grouping_cols)
+
     if args.db_rows_fn:
         if Path(args.db_rows_fn).exists():
             # If rows file exists load them from file 
@@ -63,7 +65,9 @@ def main(args):
     if args.balanced:
         min_class = np.min(clm._stats.sum(axis=0))
         data_size = min(data_size, min_class*clm.num_classes)
-    
+        print (min_class)
+   
+    print (clm._stats.sum(axis=0), clm.tot)
     print ("data size: %d" % data_size)
     
     ### Check for bags
@@ -89,8 +93,8 @@ if __name__ == "__main__":
     parser.add_argument("--ids-table", default="ids_cosk_0")
     parser.add_argument("--metatable", default="metatable_cosk_0")
     parser.add_argument("--bags-pckl", default=None)
-    parser.add_argument("--partition_cols", nargs='+', default=['sample_name', 'sample_rep', 'label'])
-    parser.add_argument("--split-ncols", type=int, metavar="INT", default=1)
+    parser.add_argument("--grouping_cols", nargs='+', default=['sample_name'])
+    parser.add_argument("--label", default='label')
     parser.add_argument("--num-classes", type=int, metavar="INT", default=2)
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32)
     parser.add_argument("--split-ratios", nargs='+', type=int, default="7 2 1")

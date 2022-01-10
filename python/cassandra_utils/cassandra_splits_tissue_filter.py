@@ -36,7 +36,7 @@ def main(args):
     cd.load_splits(splits_fn, batch_size=32, augs=[])
     
     ## Filter data
-    query = f"SELECT * FROM {cd.metatable} WHERE {'patch_id'}=?"
+    query = f"SELECT * FROM {cd.metatable} WHERE {cd.id_col}=?"
     prep = cd._clm.sess.prepare(query)
 
     new_row_keys_d = [{} for i in range(cd.num_splits)]
@@ -49,26 +49,30 @@ def main(args):
         pbar = tqdm(rows[:])
         for r_index, r in enumerate(pbar):
             key = rows[r_index]
-            res = cd._clm.sess.execute(prep, key, execution_profile='tuple')
+            res = cd._clm.sess.execute(prep, {cd.id_col:key}, execution_profile='tuple')
             data = res.one()
-            # patch_id, class, sample_name, sample_rep, tissue coverage ratio, x, y
-
+            #patch_id, gleason_label, label, sample_name, sample_rep, tissue, tumnorm_label, x, y
             idx = data[0]
-            lab = data[1]
-            tcr = data[4]
+            g_lab = data[1]
+            lab = data[2]
+            tcr = data[5]
 
             if (tcr >= tissue_th_min) and (tcr <= tissue_th_max):
-                new_row_keys_d[si].setdefault(lab, []).append({'patch_id': idx})
-
+                new_row_keys_d[si].setdefault(lab, []).append(idx)
+                
         pbar.close()
 
         # Balance labels
-        n_min = min([len(new_row_keys_d[si][k]) for k in new_row_keys_d[si].keys()])
-        for k in new_row_keys_d[si].keys():
-            tmp = new_row_keys_d[si][k]
-            random.shuffle(tmp)
-            new_row_keys_l[si] += tmp[:n_min]
-    
+        if args.balanced:
+            n_min = min([len(new_row_keys_d[si][k]) for k in new_row_keys_d[si].keys()])
+            for k in new_row_keys_d[si].keys():
+                tmp = new_row_keys_d[si][k]
+                random.shuffle(tmp)
+                new_row_keys_l[si] += tmp[:n_min]
+        else:
+            for k in new_row_keys_d[si].keys():
+                new_row_keys_l[si] += new_row_keys_d[si][k]
+
     ## New cassandra fields related to filtered splits 
     new_row_keys_l_flat = [item for sublist in new_row_keys_l for item in sublist]
     new_row_keys = np.array(new_row_keys_l_flat)
@@ -101,6 +105,7 @@ if __name__ == "__main__":
                         help="output directory where images are written", default="")
     parser.add_argument("--cassandra-pwd-fn", metavar="STR",
                         help="cassandra password", default="/tmp/cassandra_pass.txt")
+    parser.add_argument("--balanced", action="store_true", help='returns balanced splits with respect to the classes') 
     parser.add_argument("--tissue-th-min", type=float, help="min tissue coverage ratio requested", default=0.8)
     parser.add_argument("--tissue-th-max", type=float, help="max tissue coverage ratio requested", default=1.0)
     
