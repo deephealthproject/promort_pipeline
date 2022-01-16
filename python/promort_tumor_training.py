@@ -65,7 +65,7 @@ def cross_entropy(predictions, targets, epsilon=1e-12):
     return ce
 
 
-def accuracy(predictions, targets, epsilon=1e-12):
+def accuracy(predictions, targets, epsilon=1e-12, th=0.5):
     """
     Computes accuracy between targets (encoded as one-hot vectors)
     and predictions.
@@ -76,8 +76,10 @@ def accuracy(predictions, targets, epsilon=1e-12):
     predictions = np.clip(predictions, epsilon, 1.0 - epsilon)
     targets = np.around(targets) # Rounds target values in the case of smooth labels
     N = predictions.shape[0]
-    ce = np.sum((targets * predictions) + 1e-9) / N
-    return ce
+    predictions[predictions >= th] = 1
+    predictions[predictions < th] = 0    
+    ca = np.sum((targets * predictions) + 1e-9) / N
+    return ca
 
 
 
@@ -230,8 +232,8 @@ def main(args):
     print ('Number of batches for each split (train, val, test):', cd.num_batches)
     
     ## validation index check and creation of split indexes lists
+    n_splits = cd.num_splits
     if args.val_split_indexes:
-        n_splits = cd.num_splits
         out_indexes = [i for i in args.val_split_indexes if i > (n_splits-1)]
         if out_indexes:
             print (f"Not valid validation split index: {out_indexes}")
@@ -248,9 +250,12 @@ def main(args):
         print ("Test splits: %r" % test_splits)
     
     else:
-        num_batches_tr = cd.num_batches[0]
-        num_batches_val = cd.num_batches[1]
-
+        if n_splits == 1:
+            num_batches_tr = cd.num_batches[0]
+            num_batches_val = 0
+        else:
+            num_batches_tr = cd.num_batches[0]
+            num_batches_val = cd.num_batches[1]
     
     ################################
     #### Training and evaluation ###
