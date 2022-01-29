@@ -22,9 +22,9 @@ import pyeddl.eddl as eddl
 
 ### VGG16
 
-def VGG16_tumor(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
-    x = in_layer
-    x = eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed))
+def VGG16_tumor(in_shape, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
+    in_  = eddl.Input(in_shape)
+    x = eddl.ReLu(init(eddl.Conv(in_, 64, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed)), [2, 2], [2, 2])
     x = eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed)), [2, 2], [2, 2])
@@ -45,11 +45,11 @@ def VGG16_tumor(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=Non
         x = eddl.L2(x, l2_reg)
     x = eddl.ReLu(init(x,seed))
     x = eddl.Softmax(eddl.Dense(x, num_classes))
-    return x
+    return in_, x
 
-def VGG16_gleason(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
-    x = in_layer
-    x = eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed))
+def VGG16_gleason(in_shape, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
+    in_ = eddl.Input(in_shape)
+    x = eddl.ReLu(init(eddl.Conv(in_, 64, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed)), [2, 2], [2, 2])
     x = eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed)), [2, 2], [2, 2])
@@ -76,13 +76,13 @@ def VGG16_gleason(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=N
         x = eddl.L2(x, l2_reg)
     x = eddl.ReLu(init(x,seed))
     x = eddl.Softmax(eddl.Dense(x, num_classes))
-    return x
+    return in_, x
 
 
 
-def VGG16(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
-    x = in_layer
-    x = eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed))
+def VGG16(in_shape, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
+    in_ = eddl.Input(in_shape)
+    x = eddl.ReLu(init(eddl.Conv(in_, 64, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed)), [2, 2], [2, 2])
     x = eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed))
     x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed)), [2, 2], [2, 2])
@@ -109,7 +109,7 @@ def VGG16(in_layer, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dro
         x = eddl.L2(x, l2_reg)
     x = eddl.ReLu(init(x,seed))
     x = eddl.Softmax(eddl.Dense(x, num_classes))
-    return x
+    return in_, x
 
 
 #### Resnet50 
@@ -166,8 +166,9 @@ def stack1(x, filters, blocks, stride1=2, name=None):
   return x
 
 
-def ResNet50(x, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
-    x = eddl.Pad(x, [3, 3, 3, 3])
+def ResNet50(in_shape, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
+    in_ = eddl.Input(in_shape)
+    x = eddl.Pad(in_, [3, 3, 3, 3])
     x = eddl.ReLu(eddl.BatchNormalization(eddl.Conv(x, 64, [7, 7], [2, 2], "valid", False), True))
     x = eddl.Pad(x, [1, 1, 1, 1])
     x = eddl.MaxPool(x, [3, 3], [2, 2], "valid")
@@ -177,12 +178,19 @@ def ResNet50(x, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout
     x = stack1(x, 256, 6, name='conv4')
     x = stack1(x, 512, 3, name='conv5')
     
-    x = eddl.AveragePool(x, [7,7], [1, 1])
+    x = eddl.GlobalAveragePool(x)
     x = eddl.Reshape(x, [-1])
     x = eddl.Softmax(eddl.Dense(x, num_classes))
 
-    return x
+    return in_, x
 
+
+def ResNet50_pre(in_shape, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
+    resnet = eddl.download_resnet50(top=True, input_shape=in_shape)
+    in_ = resnet.layers[0]
+    x = resnet.layers[-1]
+    x = eddl.Softmax(eddl.Dense(x, num_classes))
+    return in_, x
 
 ### DNN for tissue detection
 

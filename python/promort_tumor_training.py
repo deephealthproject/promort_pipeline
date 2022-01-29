@@ -83,23 +83,23 @@ def accuracy(predictions, targets, epsilon=1e-12, th=0.5):
 
 
 
-def get_net(net_name='vgg16_tumor', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpus=[1], lsb=1, init=eddl.HeNormal, dropout=None, l2_reg=None, mem='low_mem'):
+def get_net(net_name='vgg16_tumor', in_shape=[3,256,256], num_classes=2, lr=1e-5, augs=False, gpus=[1], lsb=1, init=eddl.HeNormal, dropout=None, l2_reg=None, mem='low_mem'):
     
     ## Network definition
-    in_ = eddl.Input([3, in_size[0], in_size[1]])
-    
     if net_name == 'vgg16_tumor':
-        out = models.VGG16_tumor(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
+        in_, out = models.VGG16_tumor(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
     elif net_name == 'vgg16_gleason':
-        out = models.VGG16_gleason(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
+        in_, out = models.VGG16_gleason(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
     elif net_name == 'vgg16':
-        out = models.VGG16(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
+        in_, out = models.VGG16(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
     elif net_name == 'resnet50':
-        out = models.ResNet50(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
+        in_, out = models.ResNet50(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
+    elif net_name == 'resnet50_pre':
+        in_, out = models.ResNet50_pre(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
     else:
         print('model %s not available' % net_name)
         sys.exit(-1)
-
+    
     net = eddl.Model([in_], [out])
     eddl.build(
         net,
@@ -143,12 +143,16 @@ def rescale_tensor(x, vgg_pretrained=True, mode='tf'):
         x.add_(-1)
         return 
     elif mode == 'torch' or not vgg_pretrained:
-        # Data in 0,1 interval
+        # Normalization
+        mean=Tensor([0.485, 0.456, 0.406])
+        std=Tensor([0.229, 0.224, 0.225])
         x.div_(255.0)
         return 
+    else:
+        x.div_(255.0)
 
 def main(args):
-    size = [256, 256]  # size of images
+    in_shape = [3, 256, 256]  # size of images
 
     ### Net name
     net_name = args.net_name
@@ -175,7 +179,7 @@ def main(args):
     elif args.init_conv == 'glorot':
         net_init = eddl.GlorotNormal
 
-    net, dataset_augs = get_net(net_name=net_name, in_size=size, num_classes=num_classes, lr=args.lr, 
+    net, dataset_augs = get_net(net_name=net_name, in_shape=in_shape, num_classes=num_classes, lr=args.lr, 
             augs=args.augs_on, gpus=gpus, lsb=args.lsb, init=net_init, dropout=args.dropout, 
             l2_reg=args.l2_reg, mem=mem)
 
@@ -188,7 +192,7 @@ def main(args):
     
     ## Check options
     if args.out_dir:
-        working_dir = "model_cnn_%s_ps.%d_bs_%d_lr_%.2e" % (net_name, size[0], args.batch_size, args.lr)
+        working_dir = "model_cnn_%s_ps.%r_bs_%d_lr_%.2e" % (net_name, in_shape, args.batch_size, args.lr)
         res_dir = os.path.join(args.out_dir, working_dir)
         try:
             os.makedirs(res_dir, exist_ok=True)
