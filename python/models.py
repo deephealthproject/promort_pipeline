@@ -112,6 +112,26 @@ def VGG16(in_shape, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dro
     return in_, x
 
 
+def VGG16_GAP(in_shape, num_classes, seed=1234, init=eddl.HeNormal, l2_reg=None, dropout=None):
+    in_ = eddl.Input(in_shape)
+    x = eddl.ReLu(init(eddl.Conv(in_, 64, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 64, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 128, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(init(eddl.Conv(x, 256, [3, 3]), seed))
+    x = eddl.ReLu(init(eddl.Conv(x, 256, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 256, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.MaxPool(eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed)), [2, 2], [2, 2])
+    x = eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.ReLu(init(eddl.Conv(x, 512, [3, 3]), seed))
+    x = eddl.GlobalAveragePool(x)
+    x = eddl.Reshape(x, [-1])
+    x = eddl.Softmax(eddl.Dense(x, num_classes))
+    return in_, x
+
 #### Resnet50 
 
 def block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True, name=None):
@@ -205,3 +225,64 @@ def tissue_detector_DNN():
     net = eddl.Model([in_], [out])
 
     return net
+
+
+### Main Function to build the preferred network
+def get_net(net_name='vgg16', in_shape=[3,256,256], num_classes=2, 
+        full_mem=True, lr=1e-5, gpus=[1], lsb=1, init=eddl.HeNormal, 
+        dropout=None, l2_reg=None, init_weights_fn=None):
+    ### mem
+    if full_mem:
+        mem = 'full_mem'
+    else:
+        mem = 'low_mem'
+
+    ### Parse GPU
+    if gpus:
+        gpus = [int(i) for i in gpus]
+    else:
+        gpus = []
+
+    print ('GPUs mask: %r' % gpus)
+    ### Get Network
+    if init == 'he':
+        net_init = eddl.HeNormal
+    elif init == 'glorot':
+        net_init = eddl.GlorotNormal
+
+    ## Network definition
+    if net_name == 'vgg16_tumor':
+        in_, out = VGG16_tumor(in_shape, num_classes, init=net_init, l2_reg=l2_reg, dropout=dropout)
+    elif net_name == 'vgg16_gleason':
+        in_, out = VGG16_gleason(in_shape, num_classes, init=net_init, l2_reg=l2_reg, dropout=dropout)
+    elif net_name == 'vgg16_gap':
+        in_, out = VGG16_GAP(in_shape, num_classes, init=net_init, l2_reg=l2_reg, dropout=dropout)
+    elif net_name == 'vgg16':
+        in_, out = VGG16(in_shape, num_classes, init=net_init, l2_reg=l2_reg, dropout=dropout)
+    elif net_name == 'resnet50':
+        in_, out = ResNet50(in_shape, num_classes, init=net_init, l2_reg=l2_reg, dropout=dropout)
+    elif net_name == 'resnet50_pre':
+        in_, out = ResNet50_pre(in_shape, num_classes, init=net_init, l2_reg=l2_reg, dropout=dropout)
+    else:
+        print('model %s not available' % net_name)
+        sys.exit(-1)
+
+    net = eddl.Model([in_], [out])
+    eddl.build(
+        net,
+        eddl.rmsprop(lr),
+        ["soft_cross_entropy"],
+        ["categorical_accuracy"],
+        eddl.CS_GPU(gpus, mem=mem, lsb=lsb) if gpus else eddl.CS_CPU()
+        )
+
+    eddl.summary(net)
+   
+    ## Load weights if requested
+    if init_weights_fn:
+        print ("Loading initialization weights")
+        eddl.load(net, init_weights_fn)
+    
+    return net
+
+

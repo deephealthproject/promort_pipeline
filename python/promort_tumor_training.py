@@ -36,163 +36,30 @@ import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
 from pyeddl.tensor import Tensor
 
-
-#from cassandra_dataset import CassandraDataset
-#from cassandra.auth import PlainTextAuthProvider
-from cassandradl import CassandraDataset
-from cassandra.auth import PlainTextAuthProvider
-
-from getpass import getpass
 from tqdm import trange, tqdm
 import numpy as np
 import pickle 
 
 import models 
-import gc
-
-
-def cross_entropy(predictions, targets, epsilon=1e-12):
-    """
-    Computes cross entropy between targets (encoded as one-hot vectors)
-    and predictions.
-    Input: predictions (N, k) ndarray
-           targets (N, k) ndarray
-    Returns: scalar
-    """
-    predictions = np.clip(predictions, epsilon, 1.0 - epsilon)
-    N = predictions.shape[0]
-    ce = -np.sum(targets * np.log(predictions + 1e-9)) / N
-    return ce
-
-
-def accuracy(predictions, targets, epsilon=1e-12, th=0.5):
-    """
-    Computes accuracy between targets (encoded as one-hot vectors)
-    and predictions.
-    Input: predictions (N, k) ndarray
-           targets (N, k) ndarray
-    Returns: scalar
-    """
-    predictions = np.clip(predictions, epsilon, 1.0 - epsilon)
-    targets = np.around(targets) # Rounds target values in the case of smooth labels
-    N = predictions.shape[0]
-    predictions[predictions >= th] = 1
-    predictions[predictions < th] = 0    
-    ca = np.sum((targets * predictions) + 1e-9) / N
-    return ca
-
-
-
-def get_net(net_name='vgg16_tumor', in_shape=[3,256,256], num_classes=2, lr=1e-5, augs=False, gpus=[1], lsb=1, init=eddl.HeNormal, dropout=None, l2_reg=None, mem='low_mem'):
-    
-    ## Network definition
-    if net_name == 'vgg16_tumor':
-        in_, out = models.VGG16_tumor(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    elif net_name == 'vgg16_gleason':
-        in_, out = models.VGG16_gleason(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    elif net_name == 'vgg16':
-        in_, out = models.VGG16(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    elif net_name == 'resnet50':
-        in_, out = models.ResNet50(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    elif net_name == 'resnet50_pre':
-        in_, out = models.ResNet50_pre(in_shape, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    else:
-        print('model %s not available' % net_name)
-        sys.exit(-1)
-    
-    net = eddl.Model([in_], [out])
-    eddl.build(
-        net,
-        eddl.rmsprop(lr),
-        ["soft_cross_entropy"],
-        ["categorical_accuracy"],
-        eddl.CS_GPU(gpus, mem=mem, lsb=lsb) if gpus else eddl.CS_CPU()
-        )
-
-    eddl.summary(net)
-    eddl.setlogfile(net, "promort_VGG16_classification")
-   
-    if augs:
-        ## Set augmentations
-        training_augs = ecvl.SequentialAugmentationContainer([
-            ecvl.AugMirror(.5),
-            ecvl.AugFlip(.5),
-            ecvl.AugRotate([-45, 45])
-            #ecvl.AugAdditivePoissonNoise([0, 10]),
-            #ecvl.AugGammaContrast([0.5, 1.5]),
-            #ecvl.AugGaussianBlur([0, 0.8]),
-            #ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5)
-        ])
-        
-        validation_augs = ecvl.SequentialAugmentationContainer([
-        ])
-        
-        dataset_augs = [training_augs, validation_augs, None]
-    
-    else:
-        dataset_augs = [None, None, None]
-
-    return net, dataset_augs
-
-
-def rescale_tensor(x, vgg_pretrained=True, mode='tf'):
-    if mode == 'tf' and vgg_pretrained:
-        # Data in -1,1 interval
-        x.div_(255.0)
-        x.mult_(2)
-        x.add_(-1)
-        return 
-    elif mode == 'torch' or not vgg_pretrained:
-        # Normalization
-        mean=Tensor([0.485, 0.456, 0.406])
-        std=Tensor([0.229, 0.224, 0.225])
-        x.div_(255.0)
-        return 
-    else:
-        x.div_(255.0)
+from promort_functions import cross_entropy, accuracy, rescale_tensor, get_data_augs, get_cassandra_dl
 
 def main(args):
-    in_shape = [3, 256, 256]  # size of images
+    in_shape = [3, 256, 256]  # shape of input data (channels, w_size, h_size) 
 
-    ### Net name
-    net_name = args.net_name
-
-    ### Num classes
-    num_classes = args.num_classes
-
-    ### mem
-    if args.full_mem:
-        mem = 'full_mem'
-    else:
-        mem = 'low_mem'
-
-    ### Parse GPU
-    if args.gpu:
-        gpus = [int(i) for i in args.gpu]
-    else:
-        gpus = []
-
-    print ('GPUs mask: %r' % gpus)
-    ### Get Network
-    if args.init_conv == 'he':
-        net_init = eddl.HeNormal
-    elif args.init_conv == 'glorot':
-        net_init = eddl.GlorotNormal
-
-    net, dataset_augs = get_net(net_name=net_name, in_shape=in_shape, num_classes=num_classes, lr=args.lr, 
-            augs=args.augs_on, gpus=gpus, lsb=args.lsb, init=net_init, dropout=args.dropout, 
-            l2_reg=args.l2_reg, mem=mem)
+    #####################################################################
+    ### Get the built network and set data augmentations if requested ###
+    #####################################################################
+    net = models.get_net(net_name=args.net_name, in_shape=in_shape, num_classes=args.num_classes, 
+            full_mem=args.full_mem, lr=args.lr, gpus=args.gpu, lsb=args.lsb, init=args.init_conv, 
+            dropout=args.dropout, l2_reg=args.l2_reg, init_weights_fn=args.init_weights_fn)
 
     out = net.layers[-1]
     
-    ## Load weights if requested
-    if args.init_weights_fn:
-        print ("Loading initialization weights")
-        eddl.load(net, args.init_weights_fn)
-    
-    ## Check options
+    dataset_augs = get_data_augs()
+
+    ## Set the output directory to store the model weights
     if args.out_dir:
-        working_dir = "model_cnn_%s_ps.%r_bs_%d_lr_%.2e" % (net_name, in_shape, args.batch_size, args.lr)
+        working_dir = "model_cnn_%s_ps.%r_bs_%d_lr_%.2e" % (args.net_name, in_shape, args.batch_size, args.lr)
         res_dir = os.path.join(args.out_dir, working_dir)
         try:
             os.makedirs(res_dir, exist_ok=True)
@@ -200,71 +67,19 @@ def main(args):
             print ("Directory already exists.")
             sys.exit()
 
-    
     ########################################
     ### Set database and read split file ###
     ########################################
-
-    if not args.cassandra_pwd_fn:
-        cass_pass = getpass('Insert Cassandra password: ')	
-    else:
-        with open(args.cassandra_pwd_fn) as fd:
-            cass_pass = fd.readline().rstrip()
-
-    # create cassandra reader
-    ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['156.148.70.72'], seed=args.seed)
-    #cd = CassandraDataset(ap, ['127.0.0.1'], seed=args.seed)
-    
-    # Smooth label param
-    cd.smooth_eps = args.smooth_lab
-
-    # Check if file exists
-    if Path(args.splits_fn).exists():
-        # Load splits 
-        cd.load_splits(args.splits_fn, batch_size=args.batch_size, augs=dataset_augs, whole_batches=True)
-    else:
-        print ("Split file %s not found" % args.splits_fn)
-        sys.exit(-1)
-
-    # Check if a new data table has to be set
-    if args.data_table:
-        print (f"Setting data table to {args.data_table}")
-        cd.table = args.data_table
-
-    print (f"Using data table {args.data_table}")
-    print ('Number of batches for each split (train, val, test):', cd.num_batches)
-    
-    ## validation index check and creation of split indexes lists
-    n_splits = cd.num_splits
-    if args.val_split_indexes:
-        out_indexes = [i for i in args.val_split_indexes if i > (n_splits-1)]
-        if out_indexes:
-            print (f"Not valid validation split index: {out_indexes}")
-            sys.exit(-1)
-
-        val_splits = args.val_split_indexes
-        test_splits = args.test_split_indexes
-        train_splits = [i for i in range(n_splits) if (i not in val_splits) and (i not in test_splits)]
-        num_batches_tr = np.sum([cd.num_batches[i] for i in train_splits])
-        num_batches_val = np.sum([cd.num_batches[i] for i in val_splits])
-
-        print ("Train splits: %r" % train_splits)
-        print ("Val splits: %r" % val_splits)
-        print ("Test splits: %r" % test_splits)
-    
-    else:
-        if n_splits == 1:
-            num_batches_tr = cd.num_batches[0]
-            num_batches_val = 0
-        else:
-            num_batches_tr = cd.num_batches[0]
-            num_batches_val = cd.num_batches[1]
+    cd, num_batches_tr, num_batches_val = get_cassandra_dl(splits_fn=args.splits_fn, data_table=args.data_table, 
+            smooth_lab=args.smooth_lab, seed=args.seed, cassandra_pwd_fn=args.cassandra_pwd_fn,
+            batch_size=args.batch_size, dataset_augs=dataset_augs, 
+            whole_batches=True, 
+            val_split_indexes=args.val_split_indexes, 
+            test_split_indexes=args.test_split_indexes)
     
     ################################
     #### Training and evaluation ###
     ################################
-
     print("Defining metric...", flush=True)
     
     metric_fn = eddl.getMetric("categorical_accuracy")
@@ -402,7 +217,7 @@ def main(args):
         ## Save weights 
         if args.save_weights:
             print("Saving weights")
-            path = os.path.join(res_dir, "promort_%s_weights_ep_%s_vacc_%.2f.bin" % (net_name, e, val_acc_l[-1]))
+            path = os.path.join(res_dir, "promort_%s_weights_ep_%s_vacc_%.2f.bin" % (args.net_name, e, val_acc_l[-1]))
             eddl.save(net, path, "bin")
     
         # Dump history at the end of each epoch so if the job is interrupted data are not lost.
@@ -444,7 +259,7 @@ if __name__ == "__main__":
     parser.add_argument("--smooth-lab", type=float, metavar="FLOAT", default=0.0, help='smooth labeling parameter')
     parser.add_argument("--out-dir", metavar="DIR",
                         help="Specifies the output directory. If not set no output data is saved")
-    parser.add_argument("--init-weights-fn", metavar="DIR",
+    parser.add_argument("--init-weights-fn", metavar="DIR", default='',
                         help="Filename of the .bin file with initial parameters of the network")
     parser.add_argument("--init-conv", default='he',
                         help="initialization method of convolutional layers")
