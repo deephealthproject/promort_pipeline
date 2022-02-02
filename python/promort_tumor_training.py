@@ -41,7 +41,7 @@ import numpy as np
 import pickle 
 
 import models 
-from promort_functions import cross_entropy, accuracy, rescale_tensor, get_data_augs, get_cassandra_dl
+from promort_functions import cross_entropy, accuracy, get_data_augs, get_cassandra_dl
 
 def main(args):
     in_shape = [3, 256, 256]  # shape of input data (channels, w_size, h_size) 
@@ -55,8 +55,6 @@ def main(args):
 
     out = net.layers[-1]
     
-    dataset_augs = get_data_augs()
-
     ## Set the output directory to store the model weights
     if args.out_dir:
         working_dir = "model_cnn_%s_ps.%r_bs_%d_lr_%.2e" % (args.net_name, in_shape, args.batch_size, args.lr)
@@ -70,12 +68,15 @@ def main(args):
     ########################################
     ### Set database and read split file ###
     ########################################
+    data_preprocs, read_rgb = get_data_augs(args.preprocess_mode, args.augs_on, args.read_rgb)
+    
     cd, num_batches_tr, num_batches_val = get_cassandra_dl(splits_fn=args.splits_fn, data_table=args.data_table, 
             smooth_lab=args.smooth_lab, seed=args.seed, cassandra_pwd_fn=args.cassandra_pwd_fn,
-            batch_size=args.batch_size, dataset_augs=dataset_augs, 
+            batch_size=args.batch_size, dataset_augs=data_preprocs, 
             whole_batches=True, 
             val_split_indexes=args.val_split_indexes, 
-            test_split_indexes=args.test_split_indexes)
+            test_split_indexes=args.test_split_indexes, 
+            read_rgb=read_rgb)
     
     ################################
     #### Training and evaluation ###
@@ -109,13 +110,13 @@ def main(args):
         if args.find_opt_lr:
             eddl.setlr(net, [lr_f(e)])
 
-        ### Training 
+        ### Training ###
         ## Set training mode 
+        
         eddl.set_mode(net, 1) # TRMODE = 1, TSMODE = 0
         
         # Smooth label param
-        cd.smooth_eps = args.smooth_lab
-        cd._reset_indexes()
+        cd.set_smooth_eps(args.smooth_lab)
 
         cd.current_split = 0 ## Set the training split as the current one
         print("Epoch {:d}/{:d} - Training".format(e + 1, args.epochs),
@@ -123,8 +124,6 @@ def main(args):
         
         cd.rewind_splits(shuffle=True)
         eddl.reset_loss(net)
-        total_metric = []
-        total_loss = []
         
         ### Looping across batches of training data
         pbar = tqdm(range(num_batches_tr))
@@ -135,40 +134,32 @@ def main(args):
                 x, y = cd.load_batch_cross(not_splits=val_splits+test_splits)
             else:
                 x, y = cd.load_batch()
-                #if x.shape[0] != args.batch_size:
-                #    print (b_index, x.shape[0])
-    
-            rescale_tensor(x)
-            #print (x.getdata())
+   
             tx, ty = [x], [y]
             eddl.train_batch(net, tx, ty)
 
             #print bratch train results
             loss = eddl.get_losses(net)[0]
-            #metr = eddl.get_metrics(net)[0]
-            output = eddl.getOutput(out)
-            result = output.getdata()
-            target = y.getdata()
-            metr = accuracy(result, target)
+            metr = eddl.get_metrics(net)[0]
             
-            total_loss.append(loss)
-            total_metric.append(metr)
-            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, args.epochs, b + 1, num_batches_tr, np.mean(total_loss), np.mean(total_metric))
+            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) - loss: {:.3f}, acc: {:.3f}".format(e + 1, args.epochs, b + 1, num_batches_tr, loss, metr)
             pbar.set_postfix_str(msg)
-
+            
             if b_index % num_batches_tr == 0:
                 cd.rewind_splits(shuffle=True)
     
-        loss_l.append(np.mean(total_loss))
-        acc_l.append(np.mean(total_metric))
+        loss_l.append(loss)
+        acc_l.append(metr)
 
         pbar.close()
 
-        ### Evaluation on validation set batches
-        eddl.set_mode(net, 0) # Set test mode. Dropout is deactivated
+        ### Validation ###
+        ## Set Test mode.
+
+        eddl.set_mode(net, 0) 
+        
         # Smooth label param
-        cd.smooth_eps = 0.0
-        cd._reset_indexes()
+        cd.set_smooth_eps(0.0)
         
         cd.current_split = 1 ## Set validation split as the current one
         tot_acc = []
@@ -184,7 +175,6 @@ def main(args):
             else:
                 x, y = cd.load_batch()
 
-            rescale_tensor(x)
             eddl.forward(net, [x])
             output = eddl.getOutput(out)
             
@@ -192,11 +182,10 @@ def main(args):
             target = y.getdata()
             ca = accuracy(result, target)
             ce = cross_entropy(result, target)
-
             tot_loss.append(ce)
             tot_acc.append(ca)
 
-            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) loss: {:.3f}, acc: {:.3f} ".format(
+            msg = "Epoch {:d}/{:d} (batch {:d}/{:d}) loss: {:.3f}, acc: {:.3f}".format(
                 e + 1,
                 args.epochs,
                 b + 1,
@@ -214,6 +203,9 @@ def main(args):
     
         print("loss: {:.3f}, acc: {:.3f}, val_loss: {:.3f}, val_acc: {:.3f}\n".format(loss_l[-1], acc_l[-1], val_loss_l[-1], val_acc_l[-1]))
 
+        
+        ### Writing the results ###
+
         ## Save weights 
         if args.save_weights:
             print("Saving weights")
@@ -225,7 +217,7 @@ def main(args):
             history = {'loss': loss_l, 'acc': acc_l, 'val_loss': val_loss_l, 'val_acc': val_acc_l}
             pickle.dump(history, open(os.path.join(res_dir, 'history.pickle'), 'wb'))
         
-        ### Patience check
+        ### Early stopping implementation: Patience check
         if val_acc_l[-1] > val_acc_max:
             val_acc_max = val_acc_l[-1]
             patience_cnt = 0
@@ -234,8 +226,9 @@ def main(args):
 
         if patience_cnt > args.patience:
             ## Exit and complete the training
-            print ("Got maximum patience... training completed")
+            print ("Got maximum patience value... training completed")
             break
+
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
@@ -256,6 +249,7 @@ if __name__ == "__main__":
     parser.add_argument("--augs-on", action="store_true", help='Activate data augmentations')
     parser.add_argument("--find-opt-lr", action="store_true", help='Scan learning rate with an increasing exponential law to find best lr')
     parser.add_argument("--full-mem", action="store_true", help='Activate data augmentations')
+    parser.add_argument("--read-rgb", action="store_true", help='Load images in RGB format instead of the default BGR')
     parser.add_argument("--smooth-lab", type=float, metavar="FLOAT", default=0.0, help='smooth labeling parameter')
     parser.add_argument("--out-dir", metavar="DIR",
                         help="Specifies the output directory. If not set no output data is saved")
@@ -271,4 +265,6 @@ if __name__ == "__main__":
                         help="cassandra password")
     parser.add_argument("--net-name", metavar="STR", default='vgg16_tumor',
                         help="Select the neural net (vgg16|vgg16_tumor|vgg16_gleason|resnet50)")
+    parser.add_argument("--preprocess-mode", metavar="STR", default='div255',
+                        help="Select the preprocessing mode of images. It can be useful for using imagenet pretrained nets (div255|pytorch|tf|caffe)")
     main(parser.parse_args())

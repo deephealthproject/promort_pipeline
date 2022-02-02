@@ -40,54 +40,52 @@ def accuracy(predictions, targets, epsilon=1e-12, th=0.5):
     
     return ca
 
-
-def rescale_tensor(x, vgg_pretrained=True, mode='tf'):
-    if mode == 'tf' and vgg_pretrained:
-        # Data in -1,1 interval
-        x.div_(255.0)
-        x.mult_(2)
-        x.add_(-1)
-        return 
-    elif mode == 'torch' or not vgg_pretrained:
-        # Normalization
-        mean=Tensor([0.485, 0.456, 0.406])
-        std=Tensor([0.229, 0.224, 0.225])
-        x.div_(255.0)
-        return 
+def get_data_augs(preprocess_mode='div255', augs=False, center_crop=None, read_rgb=False):
+    if preprocess_mode == 'div255':
+        preprocess_l = [ecvl.AugToFloat32(1.), ecvl.AugDivBy255()] ## Image pixel in the [0,1] range
+    elif preprocess_mode == 'caffe':
+        preprocess_l = [ecvl.AugToFloat32(1.), ecvl.AugNormalize([103.939, 116.779, 123.68], [1.0, 1.0, 1.0])]  ## Caffe Normalization for imagenet vgg16 tf models. BGR images assumed
+    elif preprocess_mode == 'tf':
+        preprocess_l = [ecvl.AugToFloat32(1.), ecvl.AugScaleTo(-1.0, 1.0)] # Normalization for imagenet Resnet50 pretrained models. RGB images assumed
+        read_rgb = True
+    elif preprocess_mode == 'pytorch':
+        preprocess_l = [ecvl.AugToFloat32(1.), ecvl.AugDivBy255(),  ecvl.AugNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])] ## Pytorch Normalization for imagenet pretrained models. RGB images assumed
+        read_rgb = True
     else:
-        x.div_(255.0)
-
-
-def get_data_augs(augs=False):
+        preprocess_l = [] 
+    
     if augs:
         ## Set augmentations
-        training_augs = ecvl.SequentialAugmentationContainer([
+        trn_augs_l = [
             ecvl.AugMirror(.5),
             ecvl.AugFlip(.5),
             ecvl.AugRotate([-45, 45])
-            #ecvl.AugAdditivePoissonNoise([0, 10]),
-            #ecvl.AugGammaContrast([0.5, 1.5]),
-            #ecvl.AugGaussianBlur([0, 0.8]),
-            #ecvl.AugCoarseDropout([0, 0.3], [0.02, 0.05], 0.5)
-        ])
+        ]
         
-        validation_augs = ecvl.SequentialAugmentationContainer([
-        ])
+        val_augs_l = []
         
-        dataset_augs = [training_augs, validation_augs, None]
-    
     else:
-        dataset_augs = [None, None, None]
+        trn_augs_l = []
+        val_augs_l = []
 
-    return dataset_augs
+    training_augs = ecvl.SequentialAugmentationContainer(trn_augs_l + preprocess_l)
+    validation_augs = ecvl.SequentialAugmentationContainer(val_augs_l + preprocess_l)
+    
+    #if center_crop: ADD this feature
 
-    ######################################
-    ### Cassandra Dataloader functions ###
-    ######################################
+    dataset_augs = [training_augs, validation_augs, None]
+    
+    return dataset_augs, read_rgb
+
+######################################
+### Cassandra Dataloader functions ###
+######################################
 
 def get_cassandra_dl(splits_fn=None, data_table=None, smooth_lab=0.0, seed=1234, cassandra_pwd_fn='/tmp/cassandra_pass.txt',
-        batch_size=32, dataset_augs=[], whole_batches=True, val_split_indexes=None, test_split_indexes=None):
+        batch_size=32, dataset_augs=[], whole_batches=True, val_split_indexes=None, test_split_indexes=None, 
+        addr='156.148.70.72', user='prom', read_rgb=False):
 
+    print ('READ RGB: %r' % read_rgb)
     if not cassandra_pwd_fn:
         cass_pass = getpass('Insert Cassandra password: ')	
     else:
@@ -95,8 +93,8 @@ def get_cassandra_dl(splits_fn=None, data_table=None, smooth_lab=0.0, seed=1234,
             cass_pass = fd.readline().rstrip()
 
     # create cassandra reader
-    ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['156.148.70.72'], seed=seed)
+    ap = PlainTextAuthProvider(username=user, password=cass_pass)
+    cd = CassandraDataset(ap, [addr], seed=seed)
     
     # Smooth label param
     cd.smooth_eps = smooth_lab
@@ -112,7 +110,10 @@ def get_cassandra_dl(splits_fn=None, data_table=None, smooth_lab=0.0, seed=1234,
     # Check if a new data table has to be set
     if data_table:
         print (f"Setting data table to {data_table}")
-        cd.table = data_table
+        cd.init_datatable(data_table)
+
+    ## Set RGB images if requested 
+    cd.set_rgb(read_rgb)
 
     print (f"Using data table {data_table}")
     print ('Number of batches for each split (train, val, test):', cd.num_batches)
