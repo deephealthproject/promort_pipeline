@@ -229,7 +229,7 @@ def tissue_detector_DNN():
 
 ### Main Function to build the preferred network
 def get_net(net_name='vgg16', in_shape=[3,256,256], num_classes=2, 
-        full_mem=True, lr=1e-5, gpus=[1], lsb=1, init=eddl.HeNormal, 
+        full_mem=True, lr=1e-5, gpus=[1], lsb=1, init='he', 
         dropout=None, l2_reg=None, init_weights_fn=None):
     ### mem
     if full_mem:
