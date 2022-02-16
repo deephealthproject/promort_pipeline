@@ -70,13 +70,15 @@ def main(args):
     ########################################
     data_preprocs, read_rgb = get_data_augs(args.preprocess_mode, args.augs_on, args.read_rgb)
     
-    cd, num_batches_tr, num_batches_val = get_cassandra_dl(splits_fn=args.splits_fn, data_table=args.data_table, 
+    cd, num_batches_tr, num_batches_val = get_cassandra_dl(splits_fn=args.splits_fn, 
+            num_classes = args.num_classes, data_table=args.data_table, 
             smooth_lab=args.smooth_lab, seed=args.seed, cassandra_pwd_fn=args.cassandra_pwd_fn,
             batch_size=args.batch_size, dataset_augs=data_preprocs, 
             whole_batches=True, 
             val_split_indexes=args.val_split_indexes, 
             test_split_indexes=args.test_split_indexes, 
-            read_rgb=read_rgb)
+            read_rgb=read_rgb,
+            lab_map=args.lab_map)
     
     ################################
     #### Training and evaluation ###
@@ -134,7 +136,7 @@ def main(args):
                 x, y = cd.load_batch_cross(not_splits=val_splits+test_splits)
             else:
                 x, y = cd.load_batch()
-   
+  
             tx, ty = [x], [y]
             eddl.train_batch(net, tx, ty)
 
@@ -245,6 +247,7 @@ if __name__ == "__main__":
     parser.add_argument("--dropout", type=float, metavar="FLOAT", default=None, help='Float value (0-1) to specify the dropout ratio' )
     parser.add_argument("--l2-reg", type=float, metavar="FLOAT", default=None, help='L2 regularization parameter')
     parser.add_argument("--gpu", nargs='+', default = [], help='Specify GPU mask. For example: 1 to use only gpu0; 1 1 to use gpus 0 and 1; 1 1 1 1 to use gpus 0,1,2,3')
+    parser.add_argument("--lab-map", nargs='+', default = [], help='Specify label mapping. It is used to group original dataset labels to new class labels. For example: if the original dataset has [0, 1, 2, 3] classes using lab-map 0 0 1 1 maps the new label 0 to the old 0,1 classes and the new label 1 to the old 2,3 classes ')
     parser.add_argument("--save-weights", action="store_true", help='Network parameters are saved after each epoch')
     parser.add_argument("--augs-on", action="store_true", help='Activate data augmentations')
     parser.add_argument("--find-opt-lr", action="store_true", help='Scan learning rate with an increasing exponential law to find best lr')

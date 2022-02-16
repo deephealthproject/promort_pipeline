@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import pyecvl.ecvl as ecvl
 import pyeddl.eddl as eddl
@@ -81,9 +82,9 @@ def get_data_augs(preprocess_mode='div255', augs=False, center_crop=None, read_r
 ### Cassandra Dataloader functions ###
 ######################################
 
-def get_cassandra_dl(splits_fn=None, data_table=None, smooth_lab=0.0, seed=1234, cassandra_pwd_fn='/tmp/cassandra_pass.txt',
+def get_cassandra_dl(splits_fn=None, num_classes=None, data_table=None, smooth_lab=0.0, seed=1234, cassandra_pwd_fn='/tmp/cassandra_pass.txt',
         batch_size=32, dataset_augs=[], whole_batches=True, val_split_indexes=None, test_split_indexes=None, 
-        addr='156.148.70.72', user='prom', read_rgb=False):
+        addr='156.148.70.72', user='prom', read_rgb=False, lab_map=[]):
 
     print ('READ RGB: %r' % read_rgb)
     if not cassandra_pwd_fn:
@@ -107,6 +108,13 @@ def get_cassandra_dl(splits_fn=None, data_table=None, smooth_lab=0.0, seed=1234,
         print ("Split file %s not found" % splits_fn)
         sys.exit(-1)
 
+    # Remap lables if requested 
+    if lab_map:
+        lab_map = [int(i) for i in lab_map]
+        cd.set_label_map(lab_map)
+    
+    cd.num_classes = num_classes 
+    
     # Check if a new data table has to be set
     if data_table:
         print (f"Setting data table to {data_table}")
