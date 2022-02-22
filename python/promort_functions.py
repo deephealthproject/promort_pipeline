@@ -83,8 +83,8 @@ def get_data_augs(preprocess_mode='div255', augs=False, center_crop=None, read_r
 ######################################
 
 def get_cassandra_dl(splits_fn=None, num_classes=None, data_table=None, smooth_lab=0.0, seed=1234, cassandra_pwd_fn='/tmp/cassandra_pass.txt',
-        batch_size=32, dataset_augs=[], whole_batches=True, val_split_indexes=None, test_split_indexes=None, 
-        addr='156.148.70.72', user='prom', read_rgb=False, lab_map=[]):
+        batch_size=32, dataset_augs=[], val_split_indexes=None, test_split_indexes=None, 
+        addr='156.148.70.72', user='prom', read_rgb=False, lab_map=[], full_batches=True):
 
     print ('READ RGB: %r' % read_rgb)
     if not cassandra_pwd_fn:
@@ -103,10 +103,17 @@ def get_cassandra_dl(splits_fn=None, num_classes=None, data_table=None, smooth_l
     # Check if file exists
     if Path(splits_fn).exists():
         # Load splits 
-        cd.load_splits(splits_fn, batch_size=batch_size, augs=dataset_augs, whole_batches=whole_batches)
+        cd.load_splits(splits_fn)
     else:
         print ("Split file %s not found" % splits_fn)
         sys.exit(-1)
+
+
+    # set batchsize
+    cd.set_batchsize(bs=32, full_batches=full_batches)
+    
+    # Set augmentations
+    cd.set_augmentations(dataset_augs)
 
     # Remap lables if requested 
     if lab_map:
