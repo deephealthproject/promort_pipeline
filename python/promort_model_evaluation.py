@@ -24,6 +24,7 @@ import pickle
 import models 
 import gc
 
+from promort_functions import get_data_augs, get_cassandra_dl
 
 def get_best_weight_file(path):
     ### Get the weight file which gave the maximum validation accuracy
@@ -39,71 +40,12 @@ def get_best_weight_file(path):
     return fn
 
 
-def get_net(net_name='vgg16_tumor', in_size=[256,256], num_classes=2, lr=1e-5, augs=False, gpus=[1], lsb=1, init=eddl.HeNormal, dropout=None, l2_reg=None, mem='low_mem'):
-    ## Network definition
-    in_ = eddl.Input([3, in_size[0], in_size[1]])
-    
-    if net_name == 'vgg16_tumor':
-        out = models.VGG16_tumor(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    elif net_name == 'vgg16_gleason':
-        out = models.VGG16_gleason(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    elif net_name == 'vgg16':
-        out = models.VGG16(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    elif net_name == 'resnet50':
-        out = models.ResNet50(in_, num_classes, init=init, l2_reg=l2_reg, dropout=dropout)
-    else:
-        print('model %s not available' % net_name)
-        sys.exit(-1)
-
-    net = eddl.Model([in_], [out])
-    eddl.build(
-        net,
-        eddl.rmsprop(1e-6),
-        ["soft_cross_entropy"],
-        ["categorical_accuracy"],
-        eddl.CS_GPU(gpus, mem=mem, lsb=lsb) if gpus else eddl.CS_CPU()
-        )
-
-    eddl.summary(net)
-
-    return net
-
-
-def rescale_tensor(x, vgg_pretrained=True, mode='tf'):
-    if mode == 'tf' and vgg_pretrained:
-        # Data in -1,1 interval
-        x.div_(255.0)
-        x.mult_(2)
-        x.add_(-1)
-        return 
-    elif mode == 'torch' or not vgg_pretrained:
-        # Data in 0,1 interval
-        x.div_(255.0)
-        return 
-
-
 def main(args):
     net_name = args.net_name
     num_classes = args.num_classes
-    size = [256, 256]  # size of images
+    in_shape = [3, 256, 256]  # shape of input data (channels, w_size, h_size) 
     
-    ### mem
-    if args.full_mem:
-        mem = 'full_mem'
-    else:
-        mem = 'low_mem'
-
-    ### Parse GPU
-    if args.gpu:
-        gpus = [int(i) for i in args.gpu]
-    else:
-        gpus = []
-
-    ### Get Network
-    net = get_net(net_name=net_name, in_size=size, num_classes=num_classes, gpus=gpus, mem=mem)
-    out = net.layers[-1]
-    
-    ## Load weights if requested
+    ## Set weight file or get the weight file with the best validation accuracy if requested
     print ("Loading initialization weights")
     if args.weights_fn:
         weights_fn = args.weights_fn
@@ -113,8 +55,15 @@ def main(args):
         print ("One of --weights_fn or --weights_path is required")
         sys.exit(-1)
    
-    eddl.load(net, weights_fn)
+    #####################################################################
+    ### Get the built network and set data augmentations if requested ###
+    #####################################################################
+    net = models.get_net(net_name=args.net_name, in_shape=in_shape, num_classes=args.num_classes, 
+            full_mem=args.full_mem, gpus=args.gpu, init_weights_fn=weights_fn)
 
+    out = net.layers[-1]
+    
+    
     ## Check options
     print ("Creating output directory...")
     working_dir = "%s_%s" % (os.path.basename(args.splits_fn), os.path.basename(weights_fn))
@@ -124,30 +73,19 @@ def main(args):
     fd = open(fn, "w")
     fd.write("patch_id,normal_p,tumor_p,normal_gt,tumor_gt\n")
     
+    ########################################
+    ### Set database and read split file ###
+    ########################################
+    data_preprocs, read_rgb = get_data_augs(args.preprocess_mode, False, args.read_rgb)
+   
+    cd, num_batches_tr, num_batches_val = get_cassandra_dl(splits_fn=args.splits_fn, 
+            num_classes = args.num_classes, seed=args.seed, cassandra_pwd_fn=args.cassandra_pwd_fn,
+            batch_size=args.batch_size, dataset_augs=data_preprocs, 
+            full_batches=True, 
+            read_rgb=read_rgb,
+            lab_map=args.lab_map)
     
-    #################################
-    ### Set database to read data ###
-    #################################
-
-    if not args.cassandra_pwd_fn:
-        cass_pass = getpass('Insert Cassandra password: ')	
-    else:
-        with open(args.cassandra_pwd_fn) as fdcass:
-            cass_pass = fdcass.readline().rstrip()
-
-    # create cassandra reader
-    ap = PlainTextAuthProvider(username='prom', password=cass_pass)
-    cd = CassandraDataset(ap, ['156.148.70.72'])
-
-    if Path(args.splits_fn).exists():
-        # Load splits 
-        cd.load_splits(args.splits_fn, batch_size=args.batch_size, augs=[], whole_batches=True)
-    else:
-        print ("Split file %s not found" % args.splits_fn)
-        sys.exit(-1)
-        
-    print ('Number of batches for each split (train, val, test):', cd.num_batches)
-
+    
     ###################
     #### Evaluation ###
     ###################
@@ -176,7 +114,6 @@ def main(args):
         n = 0
         x, y = cd.load_batch()
         x_dim = x.getShape()[0]
-        rescale_tensor(x)
         eddl.forward(net, [x])
         output = eddl.getOutput(out)
         
@@ -217,6 +154,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--batch-size", type=int, metavar="INT", default=32)
+    parser.add_argument("--seed", type=int, metavar="INT", default=None, help='Seed of the random generator to manage data load')
     parser.add_argument("--out-dir", metavar="DIR", required=True,
                         help="if set, save images in this directory")
     parser.add_argument("--weights-fn", metavar="DIR", 
@@ -234,4 +172,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-classes", type=int, metavar="INT", default=2, help='Number of categories in the dataset')
     parser.add_argument("--full-mem", action="store_true", help='Activate data augmentations')
     parser.add_argument("--gpu", nargs='+', default = [], help='Specify GPU mask. For example: 1 to use only gpu0; 1 1 to use gpus 0 and 1; 1 1 1 1 to use gpus 0,1,2,3')
+    parser.add_argument("--preprocess-mode", metavar="STR", default='div255',
+                        help="Select the preprocessing mode of images. It can be useful for using imagenet pretrained nets (div255|pytorch|tf|caffe)")
+    parser.add_argument("--read-rgb", action="store_true", help='Load images in RGB format instead of the default BGR')
+    parser.add_argument("--lab-map", nargs='+', default = [], help='Specify label mapping. It is used to group original dataset labels to new class labels. For example: if the original dataset has [0, 1, 2, 3] classes using lab-map 0 0 1 1 maps the new label 0 to the old 0,1 classes and the new label 1 to the old 2,3 classes ')
     main(parser.parse_args())
