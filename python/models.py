@@ -280,7 +280,7 @@ def get_net(net_name='vgg16', in_shape=[3,256,256], num_classes=2,
    
     ## Load weights if requested
     if init_weights_fn:
-        print ("Loading initialization weights")
+        print ("Loading initialization weights: %s" % init_weights_fn)
         eddl.load(net, init_weights_fn)
     
     return net
