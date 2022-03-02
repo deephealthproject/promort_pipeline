@@ -20,11 +20,12 @@ from getpass import getpass
 from tqdm import trange, tqdm
 import numpy as np
 import pickle 
+import json
 
 import models 
 import gc
 
-from promort_functions import get_data_augs, get_cassandra_dl
+from promort_functions import get_data_augs, get_cassandra_dl, accuracy
 
 def get_best_weight_file(path):
     ### Get the weight file which gave the maximum validation accuracy
@@ -69,20 +70,27 @@ def main(args):
     working_dir = "%s_%s" % (os.path.basename(args.splits_fn), os.path.basename(weights_fn))
     res_dir = os.path.join(args.out_dir, working_dir)
     os.makedirs(res_dir, exist_ok=True)
+    ## Write conf
+    conf_fn = os.path.join(res_dir, "conf.json")
+    with open(conf_fn, 'w') as f:
+        json.dump(args.__dict__, f, indent=2)
+
+    ## Open file of results
     fn = os.path.join(res_dir, "pred.csv")
     fd = open(fn, "w")
     fd.write("patch_id,normal_p,tumor_p,normal_gt,tumor_gt\n")
-    
+   
+
     ########################################
     ### Set database and read split file ###
     ########################################
     data_preprocs, read_rgb = get_data_augs(args.preprocess_mode, False, args.read_rgb)
    
-    cd, num_batches_tr, num_batches_val = get_cassandra_dl(splits_fn=args.splits_fn, 
+    cd, num_batches_tr, num_batches_val, train_splits, val_splits, test_splits = get_cassandra_dl(splits_fn=args.splits_fn, 
             num_classes = args.num_classes, seed=args.seed, cassandra_pwd_fn=args.cassandra_pwd_fn,
             batch_size=args.batch_size, dataset_augs=data_preprocs, 
             full_batches=True, 
-            read_rgb=read_rgb,
+            read_rgb=args.read_rgb,
             lab_map=args.lab_map)
     
     
@@ -109,40 +117,42 @@ def main(args):
     total_metric = []
     
     pbar = tqdm(range(num_batches))
+    #pbar = tqdm(range(1))
 
     for b_index, b in enumerate(pbar):
         n = 0
         x, y = cd.load_batch()
         x_dim = x.getShape()[0]
+
+        #x_np = x.getdata()[0]
+        #print (x_np)
+        #print (np.min(x_np), np.max(x_np), np.mean(x_np), np.std(x_np))
+        #sys.exit(-1)
+
         eddl.forward(net, [x])
         output = eddl.getOutput(out)
         
         sum_ = 0.0
         ids = rows[indexes-x_dim:indexes] 
         
+        result = output.getdata()
+        target = y.getdata()
+        ca = accuracy(result, target)
+        
         for k in range(x_dim):
-            result = output.select([str(k)])
-            target = y.select([str(k)])
-            ca = metric.value(target, result)
-            total_metric.append(ca)
-            sum_ += ca
-            
-            #p_id = str(ids[k][cd.id_col])
             p_id = str(ids[k])
-            result_np = result.getdata()[0]
-            gt_np = target.getdata()[0]
-            normal_p = result_np[0]
-            tumor_p = result_np[1]
-            normal_gt = gt_np[0]
-            tumor_gt = gt_np[1]
+            normal_p = result[k, 0]
+            tumor_p = result[k, 1]
+            normal_gt = target[k, 0]
+            tumor_gt = target[k, 1]
 
             fd.write('%s,%.2f,%.2f,%.2f,%.2f\n' % (p_id, normal_p, tumor_p, normal_gt, tumor_gt))
 
-            n += 1
-        
         indexes = cd.current_index[si]
-        
-        msg = "Batch {:d}/{:d}) - acc: {:.3f} ".format(b + 1, num_batches, (sum_ / n))
+       
+        total_metric.append(ca)
+
+        msg = "Batch {:d}/{:d}) - acc: {:.3f} ".format(b + 1, num_batches, np.mean(total_metric))
         pbar.set_postfix_str(msg)
          
     pbar.close()
@@ -176,4 +186,6 @@ if __name__ == "__main__":
                         help="Select the preprocessing mode of images. It can be useful for using imagenet pretrained nets (div255|pytorch|tf|caffe)")
     parser.add_argument("--read-rgb", action="store_true", help='Load images in RGB format instead of the default BGR')
     parser.add_argument("--lab-map", nargs='+', default = [], help='Specify label mapping. It is used to group original dataset labels to new class labels. For example: if the original dataset has [0, 1, 2, 3] classes using lab-map 0 0 1 1 maps the new label 0 to the old 0,1 classes and the new label 1 to the old 2,3 classes ')
-    main(parser.parse_args())
+    
+    args = parser.parse_args()
+    main(args)
