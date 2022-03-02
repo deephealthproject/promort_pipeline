@@ -39,6 +39,8 @@ from pyeddl.tensor import Tensor
 from tqdm import trange, tqdm
 import numpy as np
 import pickle 
+import json 
+import copy 
 
 import models 
 from promort_functions import cross_entropy, accuracy, get_data_augs, get_cassandra_dl
@@ -55,31 +57,48 @@ def main(args):
 
     out = net.layers[-1]
     
-    ## Set the output directory to store the model weights
+
+    ########################################
+    ### Set database and read split file ###
+    ########################################
+    data_preprocs, read_rgb = get_data_augs(args.preprocess_mode, args.augs_on, args.read_rgb)
+
+    cd, num_batches_tr, num_batches_val, train_splits, val_splits, test_splits = get_cassandra_dl(splits_fn=args.splits_fn, 
+            num_classes = args.num_classes, data_table=args.data_table, 
+            smooth_lab=args.smooth_lab, seed=args.seed, cassandra_pwd_fn=args.cassandra_pwd_fn,
+            batch_size=args.batch_size, dataset_augs=data_preprocs,  
+            val_split_indexes=args.val_split_indexes, 
+            test_split_indexes=args.test_split_indexes, 
+            read_rgb=read_rgb,
+            lab_map=args.lab_map, 
+            full_batches=True)
+   
+
+    ###########################################################
+    ### Set the output directory to store the model weights ###
+    ###########################################################
     if args.out_dir:
-        working_dir = "model_cnn_%s_ps.%r_bs_%d_lr_%.2e" % (args.net_name, in_shape, args.batch_size, args.lr)
+        working_dir = "model_cnn_%s_ps.%dx%d_bs_%d_lr_%.2e" % (args.net_name, in_shape[0], in_shape[1], args.batch_size, args.lr)
         res_dir = os.path.join(args.out_dir, working_dir)
         try:
             os.makedirs(res_dir, exist_ok=True)
         except:
             print ("Directory already exists.")
             sys.exit()
+        
+        conf_dict = copy.copy(args.__dict__)
+        cwd = os.getcwd()
+        conf_dict['cwd'] = cwd
+        conf_dict['cd.table'] = cd.table
+        conf_dict['cd.metatable'] = cd.metatable
+        conf_dict['cd.label_col'] = cd.label_col
+        conf_dict['cd.num_classes'] = cd.num_classes
 
-    ########################################
-    ### Set database and read split file ###
-    ########################################
-    data_preprocs, read_rgb = get_data_augs(args.preprocess_mode, args.augs_on, args.read_rgb)
-    
-    cd, num_batches_tr, num_batches_val = get_cassandra_dl(splits_fn=args.splits_fn, 
-            num_classes = args.num_classes, data_table=args.data_table, 
-            smooth_lab=args.smooth_lab, seed=args.seed, cassandra_pwd_fn=args.cassandra_pwd_fn,
-            batch_size=args.batch_size, dataset_augs=data_preprocs, 
-            whole_batches=True, 
-            val_split_indexes=args.val_split_indexes, 
-            test_split_indexes=args.test_split_indexes, 
-            read_rgb=read_rgb,
-            lab_map=args.lab_map)
-    
+        conf_fn = os.path.join(res_dir, 'conf.json')
+        with open(conf_fn, 'w') as f:
+            json.dump(conf_dict, f, indent=2)
+
+
     ################################
     #### Training and evaluation ###
     ################################
@@ -129,14 +148,13 @@ def main(args):
         
         ### Looping across batches of training data
         pbar = tqdm(range(num_batches_tr))
-        #pbar = tqdm(range(num_batches_tr))
 
         for b_index, b in enumerate(pbar):
             if args.val_split_indexes:
                 x, y = cd.load_batch_cross(not_splits=val_splits+test_splits)
             else:
                 x, y = cd.load_batch()
-  
+            
             tx, ty = [x], [y]
             eddl.train_batch(net, tx, ty)
 
@@ -176,7 +194,7 @@ def main(args):
                 x, y = cd.load_batch_cross(not_splits=train_splits+test_splits)
             else:
                 x, y = cd.load_batch()
-
+            
             eddl.forward(net, [x])
             output = eddl.getOutput(out)
             
