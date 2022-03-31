@@ -5,7 +5,6 @@
 
 namespace py = pybind11;
 
-
 PYBIND11_MODULE(OPT_MPI, m) {
     m.doc() = "pybind11 SGD_mpi and mpi_env for eddl layers"; // optional module docstring
     //m.def("sgd_mpi", &sgd_mpi); // High level API
@@ -15,11 +14,11 @@ PYBIND11_MODULE(OPT_MPI, m) {
     py::module _core = py::module::import("pyeddl._core");
     m.attr("SGD") = _core.attr("SGD");
 
-    py::class_<SGD_mpi, std::shared_ptr<SGD_mpi>, SGD>(m, "SGD_mpi")
+    py::class_<SGD_mpi, std::unique_ptr<SGD_mpi>, SGD>(m, "SGD_mpi")
        .def(py::init<mpi_env*, float, float, float, bool>())
        .def("clone", &SGD_mpi::clone)
        .def("applygrads", &SGD_mpi::applygrads)
-       .def("sync_grads", &SGD_mpi::sync_grads);
+       .def("sync_params", &SGD_mpi::sync_params);
     
     py::class_<mpi_env>(m, "mpi_env")
        .def(py::init<int, int>(), py::arg("n_sync")=1, py::arg("bl")=512)

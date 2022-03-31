@@ -4,7 +4,7 @@ SGD_mpi::SGD_mpi(mpi_env* MPE, float lr, float momentum, float weight_decay, boo
 	SGD(lr, momentum, weight_decay, nesterov), MPE(MPE) {
     n_sync = MPE->n_sync;
     count = 0;
-    lr /= (static_cast<float>(MPE->mpi_size)); // Normalization for the ALLReduce Operation 
+    //lr /= (MPE->div); // Normalization for the ALLReduce Operation 
     
     // Barrier to sync all workers
     MPE->Barrier();
@@ -30,11 +30,12 @@ void SGD_mpi::applygrads(int batch){
     }
     else
     {
-      if (!(count % n_sync)) {
-          // Sync among workers
-	  sync_grads();
-      	  count = 0; 
-      }
+      //// Sync of gradients
+      //if (!(count % n_sync)) {
+      //    // Sync among workers
+      //    sync_gradients();
+      //    count = 0; 
+      //}
       clip();
       int p = 0;
       for (unsigned int i = 0; i < layers.size(); i++) {
@@ -49,20 +50,41 @@ void SGD_mpi::applygrads(int batch){
         }
         else p+=layers[i]->get_trainable_params_count();
       }
+      
+      // Sync of weights
+      if ((count % n_sync) == 0) {
+          // Sync among workers
+      	  sync_params();
+	  count = 0; 
+      }
+      count++;
     }
-    count++;
 }
 
-void SGD_mpi::sync_grads(){
+//void SGD_mpi::sync_grads(){
+//    for (unsigned int i = 0; i < layers.size(); i++) {
+//        if (layers[i]->trainable) {
+//            for (int j = 0; j < layers[i]->get_trainable_params_count(); j++) {
+//                Tensor* t_in = layers[i]->gradients[j]; // Gradient 
+//		MPE->Allreduce_Tensor(t_in);
+//            }
+//        }
+//   }
+//}
+
+
+void SGD_mpi::sync_params(){
     for (unsigned int i = 0; i < layers.size(); i++) {
         if (layers[i]->trainable) {
             for (int j = 0; j < layers[i]->get_trainable_params_count(); j++) {
-                Tensor* t_in = layers[i]->gradients[j]; // Gradient 
+                Tensor* t_in = layers[i]->params[j]; // Parameters 
 		MPE->Allreduce_Tensor(t_in);
+		t_in->mult_(MPE->div);
             }
         }
     }
 }
+
 
 
 // High level API

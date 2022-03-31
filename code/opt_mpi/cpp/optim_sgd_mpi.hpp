@@ -26,7 +26,8 @@ public:
     //Optimizer *share() override;
 
     void applygrads(int batch) override;
-    void sync_grads();
+    //void sync_grads();
+    void sync_params();
 };
 
 optimizer sgd_mpi(mpi_env* MPE, float lr = 0.01f, float momentum = 0.0f, float weight_decay = 0.0f, bool nesterov = false);

@@ -9,7 +9,7 @@ mpi_env::mpi_env(int n_sync, int bl):n_sync(n_sync), bl(bl){
     MPI_Get_processor_name(hostname, &h_len);
     
     mpi_block = bl * 1024;
-    div = 1/(static_cast<float>(mpi_size)); 
+    div = 1 / (static_cast<float>(mpi_size)); 
 
     avg_data = new float [mpi_size];
     std::cout << "MPI_ENV Constructor, hello from " << hostname << ", rank " << mpi_rank << std::endl;
@@ -21,7 +21,7 @@ void mpi_env::Barrier(){MPI_Barrier(MPI_COMM_WORLD);}
 
 void mpi_env::Bcast_Tensor(Tensor* t_in, int root){
     size_t sz = t_in->size;
-    float* data = new float [sz];
+    float* data = t_in->ptr;
     MPI_Bcast(data, sz, MPI_FLOAT, root, MPI_COMM_WORLD);
 }
 
@@ -39,25 +39,23 @@ void mpi_env::Allreduce_Tensor(Tensor* t_in){
     size_t mits = sz/block + 1;
     size_t rem = sz%block;
 
-    float* out_ptr_h_start = new float [sz];
-    float* out_ptr_h = out_ptr_h_start;
-    float* in_ptr_h = new float [sz];
+    float* out_ptr_h = t_in->ptr;
 
-    // blocked all_reduce + rescale
+    // blocked all_reduce 
     for (size_t mit=0; mit<mits; ++mit){
         // if last block go through reminder
         if (mit==mits-1)
             block = rem;
-        float* out_beg = out_ptr_h; // save beginning of block
-        MPI_Allreduce(in_ptr_h, out_ptr_h, block, MPI_FLOAT,
+        
+	//float* out_beg = out_ptr_h; // save beginning of block
+	MPI_Allreduce(MPI_IN_PLACE, out_ptr_h, block, MPI_FLOAT,
               MPI_SUM, MPI_COMM_WORLD);
-        out_ptr_h = out_beg; // rewind block of output
+        //out_ptr_h = out_beg; // rewind block of output
+	out_ptr_h += block;
         //for(size_t i=0; i<block; ++i)
         //    *(out_ptr_h++) *= div; // rescale
     }
 
-    delete [] out_ptr_h_start;
-    delete [] in_ptr_h;
 }
 
 void mpi_env::Broadcast_params(Net* net){
